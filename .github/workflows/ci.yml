@@ -1,10 +1,13 @@
 name: CI
 
-# Scaled down from biffo-template's own root .github/workflows/ci.yml for a
-# single Python package: a plugin repo (per ADR-0003) extends the SDK and
-# has no JS/TS and no Terraform of its own — Terraform, if a plugin ships
-# any, is provisioned by the *consuming* project's infra, not this repo's
-# CI (see README's "What this repo does not build" section).
+# Scaled down from biffo-template's own root .github/workflows/ci.yml. A plugin
+# repo (per ADR-0003) has no Terraform of its own — Terraform, if a plugin ships
+# any, is provisioned by the *consuming* project's infra, not this repo's CI.
+#
+# It CAN have JS/TS, contrary to the skeleton's original assumption: a
+# user-facing plugin (ADR-0017/ADR-0021) ships its own frontend under web/, and
+# without the job below none of it — lint, types, tests or even whether it
+# builds — is checked by anything. Mirrors biffo-plugin-ideation's ci.yml.
 
 on:
   push:
@@ -154,3 +157,27 @@ jobs:
           enable-cache: true
       - run: uv sync --all-groups
       - run: uv run pip-audit
+
+  frontend:
+    name: Frontend (lint, types, test, build)
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+      # Build last: a bundle that type-checks but does not build is still a
+      # broken deploy, and web/dist is what the manifest's user_frontend ships.
+      - run: pnpm run build
