@@ -20,7 +20,6 @@ from idea_scout import models as m
 from idea_scout.definitions import (
     MAX_CANDIDATES,
     RESEARCH_AGENT_NAMES,
-    SYNTHESIS_AGENT_NAME,
 )
 from idea_scout.models import BuildType, UserProfile
 from idea_scout.service import (
@@ -45,11 +44,17 @@ async def _start(core: FakeCoreGateway, *, owner_sub: str = OWNER, complexity: i
 
 
 async def _run_to_completion(core: FakeCoreGateway, run_id: str, *, candidates: int = 5):
-    """Drive a started run all the way to complete, the way polling would."""
+    """Drive a started run to complete.
+
+    Note what the *plugin* does here versus what the **engine** does: the engine
+    fires the synthesis run when the research set finishes, and the plugin only
+    discovers it. `engine_fires_synthesis` stands in for that.
+    """
     svc = _service(core)
     core.complete_all_research(run_id)
-    await svc.get_run(owner_sub=OWNER, run_id=run_id)  # research -> synthesising
-    core.synthesis_run_for(run_id).complete(candidates_message(candidates))
+    synthesis = core.engine_fires_synthesis(run_id)
+    await svc.get_run(owner_sub=OWNER, run_id=run_id)  # picks up the engine's run
+    synthesis.complete(candidates_message(candidates))
     return await svc.get_run(owner_sub=OWNER, run_id=run_id)  # synthesising -> complete
 
 
@@ -171,32 +176,55 @@ async def test_the_run_stays_researching_while_any_angle_is_in_flight():
     assert state.synthesis_run_id is None
 
 
-async def test_synthesis_fires_once_every_angle_is_terminal():
+async def test_the_run_waits_while_the_engine_has_not_fired_synthesis():
+    """Research all terminal, but the engine has not reacted yet. The plugin must
+    not race it to a false failure — nor fire synthesis itself."""
     core = FakeCoreGateway()
     run = await _start(core)
     core.complete_all_research(run.id)
 
     state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
 
-    assert state.status == m.SYNTHESISING
-    assert state.synthesis_run_id is not None
-    assert core.requested[-1]["agent_name"] == SYNTHESIS_AGENT_NAME
+    assert state.status == m.RESEARCHING
+    # Three research runs and nothing else: the plugin did not fire synthesis.
+    assert [r["agent_name"] for r in core.requested] == list(RESEARCH_AGENT_NAMES)
 
 
-async def test_the_synthesis_agent_receives_every_angles_findings():
+async def test_the_run_picks_up_the_synthesis_run_the_engine_fired():
     core = FakeCoreGateway()
     run = await _start(core)
     core.complete_all_research(run.id)
-    await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
+    synthesis = core.engine_fires_synthesis(run.id)
 
-    payload = core.requested[-1]["input_payload"]
-    assert len(payload["findings"]) == 3
-    assert payload["build_type"] == "micro-saas"
-    assert payload["profile"] is not None
+    state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert state.status == m.SYNTHESISING
+    assert state.synthesis_run_id == synthesis.id
 
 
-async def test_a_failed_angle_degrades_rather_than_failing_the_run():
-    """Three angles are deliberately redundant."""
+async def test_the_three_research_runs_share_one_chain():
+    """The whole fan-in depends on this: uncorrelated runs are three chain roots
+    and the engine's join would never recognise them as a set."""
+    core = FakeCoreGateway()
+    run = await _start(core)
+
+    chains = {r["causation_id"] for r in core.requested}
+    assert len(chains) == 1
+    assert chains == {run.chain_id}
+
+
+async def test_two_concurrent_scouts_do_not_share_a_chain():
+    """Otherwise one founder's research would satisfy another's join."""
+    core = FakeCoreGateway()
+    first = await _start(core)
+    second = await _start(core)
+
+    assert first.chain_id != second.chain_id
+
+
+async def test_a_failed_angle_does_not_fail_the_run_while_others_succeeded():
+    """Degrading past a dead angle is the engine's call now, but the plugin must
+    not pre-empt it by failing the run."""
     core = FakeCoreGateway()
     run = await _start(core)
     research = core.research_runs_for(run.id)
@@ -206,22 +234,7 @@ async def test_a_failed_angle_degrades_rather_than_failing_the_run():
 
     state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
 
-    assert state.status == m.SYNTHESISING
-    assert len(core.requested[-1]["input_payload"]["findings"]) == 2
-
-
-async def test_an_angle_that_returns_no_tool_call_is_dropped():
-    core = FakeCoreGateway()
-    run = await _start(core)
-    research = core.research_runs_for(run.id)
-    research[0].complete([{"role": "assistant", "content": "I could not find anything."}])
-    research[1].complete(findings_message())
-    research[2].complete(findings_message())
-
-    state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
-
-    assert state.status == m.SYNTHESISING
-    assert len(core.requested[-1]["input_payload"]["findings"]) == 2
+    assert state.status == m.RESEARCHING  # waiting on the engine, not failed
 
 
 async def test_all_angles_failing_fails_the_run_with_a_readable_reason():
@@ -276,11 +289,12 @@ async def test_polling_candidates_alone_still_advances_the_run():
     core = FakeCoreGateway()
     run = await _start(core)
     core.complete_all_research(run.id)
+    synthesis = core.engine_fires_synthesis(run.id)
 
     await _service(core).get_candidates(owner_sub=OWNER, run_id=run.id)
     assert core.runs[run.id].status == m.SYNTHESISING
 
-    core.synthesis_run_for(run.id).complete(candidates_message())
+    synthesis.complete(candidates_message())
     candidates = await _service(core).get_candidates(owner_sub=OWNER, run_id=run.id)
     assert len(candidates) == 5
 
@@ -300,8 +314,9 @@ async def test_a_failed_synthesis_fails_the_run():
     core = FakeCoreGateway()
     run = await _start(core)
     core.complete_all_research(run.id)
+    synthesis = core.engine_fires_synthesis(run.id)
     await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
-    core.synthesis_run_for(run.id).fail()
+    synthesis.fail()
 
     state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
 
@@ -313,8 +328,9 @@ async def test_a_synthesis_that_returns_nothing_usable_fails_the_run():
     core = FakeCoreGateway()
     run = await _start(core)
     core.complete_all_research(run.id)
+    synthesis = core.engine_fires_synthesis(run.id)
     await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
-    core.synthesis_run_for(run.id).complete([{"role": "assistant", "content": "Here you go!"}])
+    synthesis.complete([{"role": "assistant", "content": "Here you go!"}])
 
     state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
 
@@ -325,8 +341,9 @@ async def test_a_synthesis_returning_an_empty_list_fails_the_run():
     core = FakeCoreGateway()
     run = await _start(core)
     core.complete_all_research(run.id)
+    synthesis = core.engine_fires_synthesis(run.id)
     await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
-    core.synthesis_run_for(run.id).complete(candidates_message(0))
+    synthesis.complete(candidates_message(0))
 
     state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
 

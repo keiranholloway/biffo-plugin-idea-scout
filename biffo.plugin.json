@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "description": "Idea Scout — identity-aware startup idea discovery. Reads a founder's own profile, takes a build-type category and a complexity preference, dispatches angle-specific research agents over web search, and returns 5–10 ranked candidate ideas each carrying a viability scorecard compatible with the Ideation Engine's, so a promising one can be pressure-tested straight away.",
   "author": "Biffo Team",
-  "tags": ["ideation", "agentic", "product", "discovery"],
+  "tags": [
+    "ideation",
+    "agentic",
+    "product",
+    "discovery"
+  ],
   "required_core_version": ">=0.127.0",
   "core_capabilities": {
     "agent-run-request": "^1",
@@ -42,6 +47,12 @@
           "description": "researching | synthesising | complete | failed. Nullable because the generated migration DDL does not apply declared defaults (only the in-process model) — the service sets it explicitly on create."
         },
         {
+          "name": "chain_id",
+          "type": "String(36)",
+          "nullable": false,
+          "description": "The causation chain this run's agent runs share (ADR-0014 §8). Generated before the agent runs are requested — it cannot be the run's own id, because the row does not exist yet — and passed as causation_id on all three research runs so the orchestration engine's agent_fan_in can find them as siblings. Also how this plugin finds the synthesis run the engine created on its behalf."
+        },
+        {
           "name": "research_run_ids",
           "type": "Text",
           "nullable": true,
@@ -75,19 +86,41 @@
       "indexes": [
         {
           "name": "idx_idea_scout_runs_owner",
-          "columns": ["tenant_id", "owner_sub"]
+          "columns": [
+            "tenant_id",
+            "owner_sub"
+          ]
+        },
+        {
+          "name": "idx_idea_scout_runs_chain",
+          "columns": [
+            "tenant_id",
+            "chain_id"
+          ]
         }
       ],
       "permissions": {
-        "list": { "allowed": false },
-        "read": { "allowed": false },
-        "create": { "allowed": false },
-        "update": { "allowed": false },
-        "delete": { "allowed": false }
+        "list": {
+          "allowed": false
+        },
+        "read": {
+          "allowed": false
+        },
+        "create": {
+          "allowed": false
+        },
+        "update": {
+          "allowed": false
+        },
+        "delete": {
+          "allowed": false
+        }
       },
       "owner_scoped_service": {
         "owner_column": "owner_sub",
-        "allowed_principals": ["system:idea-scout"]
+        "allowed_principals": [
+          "system:idea-scout"
+        ]
       }
     },
     {
@@ -145,23 +178,41 @@
       "indexes": [
         {
           "name": "idx_idea_scout_candidates_run",
-          "columns": ["tenant_id", "run_id"]
+          "columns": [
+            "tenant_id",
+            "run_id"
+          ]
         },
         {
           "name": "idx_idea_scout_candidates_owner",
-          "columns": ["tenant_id", "owner_sub"]
+          "columns": [
+            "tenant_id",
+            "owner_sub"
+          ]
         }
       ],
       "permissions": {
-        "list": { "allowed": false },
-        "read": { "allowed": false },
-        "create": { "allowed": false },
-        "update": { "allowed": false },
-        "delete": { "allowed": false }
+        "list": {
+          "allowed": false
+        },
+        "read": {
+          "allowed": false
+        },
+        "create": {
+          "allowed": false
+        },
+        "update": {
+          "allowed": false
+        },
+        "delete": {
+          "allowed": false
+        }
       },
       "owner_scoped_service": {
         "owner_column": "owner_sub",
-        "allowed_principals": ["system:idea-scout"]
+        "allowed_principals": [
+          "system:idea-scout"
+        ]
       }
     },
     {
@@ -201,16 +252,40 @@
       "indexes": [
         {
           "name": "idx_idea_scout_build_types_tenant_key",
-          "columns": ["tenant_id", "key"],
+          "columns": [
+            "tenant_id",
+            "key"
+          ],
           "unique": true
         }
       ],
       "permissions": {
-        "list": { "allowed": true, "required_role": [] },
-        "read": { "allowed": true, "required_role": [] },
-        "create": { "allowed": true, "required_role": ["admin"] },
-        "update": { "allowed": true, "required_role": ["admin"] },
-        "delete": { "allowed": true, "required_role": ["admin"] }
+        "list": {
+          "allowed": true,
+          "required_role": []
+        },
+        "read": {
+          "allowed": true,
+          "required_role": []
+        },
+        "create": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        },
+        "update": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        },
+        "delete": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        }
       }
     }
   ],

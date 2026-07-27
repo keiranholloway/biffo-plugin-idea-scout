@@ -53,6 +53,7 @@ class CoreGateway(Protocol):
         complexity: int,
         profile_snapshot: dict[str, Any],
         research_run_ids: list[str],
+        chain_id: str,
     ) -> ScoutRun: ...
 
     async def get_run(self, *, owner_sub: str, run_id: str) -> ScoutRun | None: ...
@@ -78,12 +79,29 @@ class CoreGateway(Protocol):
         definition: dict[str, Any],
         output_tool: dict[str, Any],
         input_payload: dict[str, Any],
+        causation_id: str,
     ) -> str:
         """Request one async agent run; returns its id.
 
         No thread: Idea Scout has no conversation, so the run's whole context is
         ``input_payload``. ``output_tool`` is registered as the run's structured
         output tool — never as a registry tool.
+
+        ``causation_id`` is **required**, not optional. It is what makes the
+        parallel research runs siblings of one chain, which is the only way the
+        orchestration engine's fan-in can recognise them as a set. A run sent
+        without one is a chain root, and a fan-in waiting on it would wait
+        forever.
+        """
+        ...
+
+    async def find_chain_run(self, *, chain_id: str, agent_name: str) -> AgentRunView | None:
+        """The run of ``agent_name`` in this causation chain, if one exists yet.
+
+        How this plugin discovers a run the **orchestration engine** created on
+        its behalf: the engine fires the synthesis agent when the research set
+        completes, and nothing tells the plugin its id. Returns ``None`` while
+        the engine has not fired it.
         """
         ...
 

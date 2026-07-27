@@ -29,6 +29,7 @@ def _row(**overrides):
         "owner_sub": "founder-sub-abc",
         "build_type": "micro-saas",
         "complexity": 3,
+        "chain_id": "chain-1",
         "status": RESEARCHING,
         "research_run_ids": json.dumps(["a", "b", "c"]),
         "profile_snapshot": json.dumps({"headline": "Fractional CTO"}),
@@ -138,11 +139,15 @@ async def test_an_agent_run_is_created_without_a_thread():
         definition={"model": "m", "tools": ["web_search"], "max_turns": 8},
         output_tool={"type": "function", "function": {"name": "submit_research_findings"}},
         input_payload={"brief": {"build_type": {"key": "micro-saas"}}},
+        causation_id="chain-1",
     )
 
     body = transport.last("POST", AGENT_RUNS)["json"]
     assert "thread_id" not in body
     assert body["agent_name"] == "idea-scout-community"
+    # The chain is what makes sibling research runs a set the engine's fan-in
+    # can recognise; without it each would be its own root.
+    assert body["causation_id"] == "chain-1"
     assert body["input_payload"]["brief"]["build_type"]["key"] == "micro-saas"
 
 
@@ -154,6 +159,7 @@ async def test_the_output_tool_rides_on_the_snapshot_not_the_tool_registry():
         definition={"model": "m", "tools": ["web_search"]},
         output_tool={"type": "function", "function": {"name": "submit_research_findings"}},
         input_payload={},
+        causation_id="chain-1",
     )
 
     snapshot = transport.last("POST", AGENT_RUNS)["json"]["definition_snapshot"]
@@ -194,10 +200,12 @@ async def test_creating_a_run_serialises_the_json_columns_and_sends_no_owner():
         complexity=3,
         profile_snapshot={"headline": "Fractional CTO"},
         research_run_ids=["a", "b", "c"],
+        chain_id="chain-1",
     )
 
     body = transport.last("POST", RUNS)["json"]
     assert "owner_sub" not in body
+    assert body["chain_id"] == "chain-1"
     assert body["status"] == RESEARCHING
     # Text columns: strings on the wire, not nested JSON.
     assert body["research_run_ids"] == json.dumps(["a", "b", "c"])
@@ -345,3 +353,56 @@ async def test_a_configured_role_returns_its_prompt_and_model():
     )
     result = await CoreHttpGateway(transport).get_own_config(role="x")
     assert result == {"system_prompt": "custom", "model": "custom-model"}
+
+
+# ── Finding what the engine created ──────────────────────────────────────────
+
+
+async def test_finding_a_chain_run_queries_by_chain_and_agent():
+    """How the plugin discovers the synthesis run the orchestration engine fired
+    on its behalf — nothing tells it the id."""
+    transport = FakeTransport(
+        {
+            ("GET", AGENT_RUNS): [{"id": "syn-1"}],
+            ("GET", f"{AGENT_RUNS}/syn-1"): {
+                "id": "syn-1",
+                "status": "completed",
+                "messages": [],
+            },
+        }
+    )
+    view = await CoreHttpGateway(transport).find_chain_run(
+        chain_id="chain-1", agent_name="idea-scout-synthesis"
+    )
+
+    assert view is not None
+    assert view.id == "syn-1"
+    assert transport.calls[0]["params"] == {
+        "causation_id": "chain-1",
+        "agent_name": "idea-scout-synthesis",
+    }
+
+
+async def test_no_chain_run_yet_reads_as_none():
+    """The normal case while the engine has not fired it — not an error."""
+    transport = FakeTransport({("GET", AGENT_RUNS): []})
+    assert await CoreHttpGateway(transport).find_chain_run(chain_id="c", agent_name="a") is None
+
+
+async def test_finding_a_chain_run_fetches_it_in_full():
+    """The chain listing carries summaries only; the caller needs the transcript
+    to extract the structured output, so the full run is fetched."""
+    transport = FakeTransport(
+        {
+            ("GET", AGENT_RUNS): [{"id": "syn-1"}],
+            ("GET", f"{AGENT_RUNS}/syn-1"): {
+                "id": "syn-1",
+                "status": "completed",
+                "messages": [{"role": "assistant"}],
+            },
+        }
+    )
+    view = await CoreHttpGateway(transport).find_chain_run(chain_id="c", agent_name="a")
+
+    assert view is not None
+    assert view.messages == [{"role": "assistant"}]

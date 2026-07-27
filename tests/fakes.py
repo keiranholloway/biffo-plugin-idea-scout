@@ -17,6 +17,7 @@ import json
 from typing import Any
 
 from idea_scout.adapter import CoreNotFoundError
+from idea_scout.definitions import SYNTHESIS_AGENT_NAME
 from idea_scout.models import (
     RESEARCHING,
     RUN_COMPLETED,
@@ -117,6 +118,8 @@ class FakeAgentRun:
         self.status = "pending"
         self.messages: list[dict[str, Any]] = []
         self.model: str | None = "test-model"
+        #: The chain this run belongs to — what makes sibling runs a set.
+        self.causation_id: str | None = None
 
     def complete(self, messages: list[dict[str, Any]] | None = None) -> None:
         self.status = RUN_COMPLETED
@@ -188,12 +191,14 @@ class FakeCoreGateway:
         complexity: int,
         profile_snapshot: dict[str, Any],
         research_run_ids: list[str],
+        chain_id: str,
     ) -> ScoutRun:
         run = ScoutRun(
             id=self._id("run"),
             owner_sub=owner_sub,
             build_type=build_type,
             complexity=complexity,
+            chain_id=chain_id,
             status=RESEARCHING,
             research_run_ids=list(research_run_ids),
             profile_snapshot=profile_snapshot,
@@ -225,8 +230,10 @@ class FakeCoreGateway:
         definition: dict[str, Any],
         output_tool: dict[str, Any],
         input_payload: dict[str, Any],
+        causation_id: str,
     ) -> str:
         run = FakeAgentRun(self._id("agent"), agent_name)
+        run.causation_id = causation_id
         self.agent_runs[run.id] = run
         self.requested.append(
             {
@@ -234,9 +241,20 @@ class FakeCoreGateway:
                 "definition": definition,
                 "output_tool": output_tool,
                 "input_payload": input_payload,
+                "causation_id": causation_id,
             }
         )
         return run.id
+
+    async def find_chain_run(self, *, chain_id: str, agent_name: str) -> AgentRunView | None:
+        """Stands in for the orchestration engine having fired a run in this
+        chain. Tests call ``engine_fires_synthesis`` to make one appear."""
+        for run in self.agent_runs.values():
+            if run.causation_id == chain_id and run.agent_name == agent_name:
+                return AgentRunView(
+                    id=run.id, status=run.status, messages=run.messages, model=run.model
+                )
+        return None
 
     async def get_agent_run(self, *, run_id: str) -> AgentRunView | None:
         if run_id in self.vanished_agent_runs:
@@ -282,6 +300,16 @@ class FakeCoreGateway:
     def complete_all_research(self, run_id: str) -> None:
         for agent_run in self.research_runs_for(run_id):
             agent_run.complete(findings_message(angle=agent_run.agent_name))
+
+    def engine_fires_synthesis(self, run_id: str) -> FakeAgentRun:
+        """What the orchestration engine does when the research set completes:
+        create a synthesis run in the same chain. The plugin does not do this —
+        it only discovers the result — so tests must not either."""
+        scout_run = self.runs[run_id]
+        agent_run = FakeAgentRun(self._id("agent"), SYNTHESIS_AGENT_NAME)
+        agent_run.causation_id = scout_run.chain_id
+        self.agent_runs[agent_run.id] = agent_run
+        return agent_run
 
     def synthesis_run_for(self, run_id: str) -> FakeAgentRun:
         synthesis_run_id = self.runs[run_id].synthesis_run_id

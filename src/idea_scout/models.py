@@ -74,6 +74,9 @@ class ScoutRun:
     owner_sub: str
     build_type: str
     complexity: int
+    #: The causation chain this run's agent runs share. Generated before the
+    #: agent runs are requested, so it cannot be the run's own id.
+    chain_id: str
     status: str
     research_run_ids: list[str] = field(default_factory=list)
     synthesis_run_id: str | None = None
