@@ -85,6 +85,7 @@ def _run_from_row(row: dict[str, Any]) -> ScoutRun:
         owner_sub=row["owner_sub"],
         build_type=row["build_type"],
         complexity=row["complexity"],
+        chain_id=row["chain_id"],
         status=row["status"],
         research_run_ids=_load_json(row.get("research_run_ids"), default=[]),
         synthesis_run_id=row.get("synthesis_run_id"),
@@ -177,6 +178,7 @@ class CoreHttpGateway:
         complexity: int,
         profile_snapshot: dict[str, Any],
         research_run_ids: list[str],
+        chain_id: str,
     ) -> ScoutRun:
         row = await self._t.request(
             "POST",
@@ -184,6 +186,7 @@ class CoreHttpGateway:
             json={
                 "build_type": build_type,
                 "complexity": complexity,
+                "chain_id": chain_id,
                 "status": RESEARCHING,
                 "research_run_ids": json.dumps(research_run_ids),
                 "profile_snapshot": json.dumps(profile_snapshot),
@@ -223,10 +226,15 @@ class CoreHttpGateway:
         definition: dict[str, Any],
         output_tool: dict[str, Any],
         input_payload: dict[str, Any],
+        causation_id: str,
     ) -> str:
         # No thread_id: this run's whole context is input_payload. The output
         # tool rides on the definition snapshot as `output_tools`, which is what
         # makes it a structured-output tool rather than a registry lookup.
+        #
+        # causation_id is what makes the parallel research runs a *set*. Without
+        # it each would be its own chain root and the engine's fan-in would
+        # never recognise them as siblings.
         snapshot = {**definition, "output_tools": [output_tool]}
         run = await self._t.request(
             "POST",
@@ -235,9 +243,24 @@ class CoreHttpGateway:
                 "agent_name": agent_name,
                 "definition_snapshot": snapshot,
                 "input_payload": input_payload,
+                "causation_id": causation_id,
             },
         )
         return run["id"]
+
+    async def find_chain_run(self, *, chain_id: str, agent_name: str) -> AgentRunView | None:
+        """Look up a run the orchestration engine created in this chain.
+
+        The chain listing returns *summaries* (no transcript), so this fetches
+        the full run once it finds one — the caller needs the messages to
+        extract the structured output.
+        """
+        rows = await self._t.request(
+            "GET", _AGENT_RUNS, params={"causation_id": chain_id, "agent_name": agent_name}
+        )
+        if not rows:
+            return None
+        return await self.get_agent_run(run_id=rows[0]["id"])
 
     async def get_agent_run(self, *, run_id: str) -> AgentRunView | None:
         try:

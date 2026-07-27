@@ -4,15 +4,17 @@ Pure async logic over the ``CoreGateway`` port: start a run, fan out to three
 research agents, fan back in to one synthesis agent, and materialise its
 structured output into stored candidates. No HTTP, no AWS, no LLM SDK.
 
-**Why the state machine advances on poll.** There is no event-subscriber write
-path: Core derives the owner from the founder's forwarded token, so every write
-must happen inside a founder request (ADR-0017 §5). A founder polling their run
-is exactly such a request, so that poll is where research is collected, the
-synthesis run is fired, and candidates are stored — the same model the Ideation
-Engine uses to materialise its report. The consequence worth knowing: a run only
-progresses while someone is looking at it. That is fine for a founder watching a
-run they just started, and it is the reason the eventual scheduled/cadence
-feature will need a different trigger, not just a cron calling ``start_run``.
+**The pipeline runs unattended; only the projection is lazy.** ``start_run``
+fires three research agents under one causation chain, and the orchestration
+engine's ``agent_fan_in`` fires the synthesis agent when that set completes —
+without this plugin being involved, so a founder can close the tab. What still
+happens on the founder's read is turning the finished synthesis run into stored
+candidate *rows*: Core derives the owner from the forwarded token, so an
+owner-scoped write must happen inside a founder request (ADR-0017 §5). By the
+time they look, the expensive work is already done and the write is instant.
+
+So this service no longer sequences the pipeline — it correlates the fan-out at
+the start, and reads the result at the end. The middle belongs to the engine.
 
 **Why a failed research agent doesn't fail the run.** Three angles are
 deliberately redundant. Losing one leaves a thinner but still useful shortlist,
@@ -23,6 +25,7 @@ run, does fail the run — with a reason they can read.
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import replace
 from typing import Any
 
@@ -39,11 +42,9 @@ from .definitions import (
     SYNTHESIS_AGENT_NAME,
     CandidateSet,
     FindingSet,
-    candidates_tool_schema,
     complexity_label,
     findings_tool_schema,
     research_definition,
-    synthesis_definition,
 )
 from .models import (
     COMPLETE,
@@ -177,6 +178,12 @@ class IdeaScoutService:
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
         brief = self._build_brief(profile=profile, build_type=chosen, complexity=complexity)
 
+        # One chain for all three, generated here because the run row does not
+        # exist yet — and because this is what makes them a *set* the engine's
+        # fan-in can recognise. Three uncorrelated runs would each be a chain
+        # root and the join would never fire.
+        chain_id = str(uuid.uuid4())
+
         research_run_ids = []
         for agent_name in RESEARCH_AGENT_NAMES:
             instructions, model = await self._resolve_agent(agent_name, self._research_model)
@@ -185,6 +192,7 @@ class IdeaScoutService:
                 definition=research_definition(model=model, instructions=instructions),
                 output_tool=findings_tool_schema(),
                 input_payload={"brief": brief},
+                causation_id=chain_id,
             )
             research_run_ids.append(run_id)
 
@@ -194,6 +202,7 @@ class IdeaScoutService:
             complexity=complexity,
             profile_snapshot=_profile_payload(profile),
             research_run_ids=research_run_ids,
+            chain_id=chain_id,
         )
 
     # ── Reading a run (and advancing it) ─────────────────────────────────────
@@ -238,46 +247,42 @@ class IdeaScoutService:
     # ── State transitions ────────────────────────────────────────────────────
 
     async def _advance_research(self, run: ScoutRun) -> ScoutRun:
-        """Research -> synthesis, once every research run is terminal.
+        """Research -> synthesis, when the engine has fired the synthesis run.
 
-        A run Core no longer knows about counts as terminal-and-failed rather
-        than pending; otherwise a vanished run leaves the scout waiting forever.
+        This no longer *decides* anything: the orchestration engine watches the
+        research set and fires synthesis itself (``agent_fan_in``). All this does
+        is discover the run the engine created — nothing tells the plugin its id
+        — and record it so subsequent polls can read its output.
+
+        A research set that failed outright never produces a synthesis run, so
+        the run would otherwise sit in ``researching`` forever. That case is
+        detected here: every research run terminal, none successful.
         """
+        synthesis = await self._core.find_chain_run(
+            chain_id=run.chain_id, agent_name=SYNTHESIS_AGENT_NAME
+        )
+        if synthesis is not None:
+            await self._core.update_run(
+                run_id=run.id, status=SYNTHESISING, synthesis_run_id=synthesis.id
+            )
+            return _with(run, status=SYNTHESISING, synthesis_run_id=synthesis.id)
+
+        # No synthesis run yet. Either the research is still going — the normal
+        # case, and nothing to do — or it finished with nothing usable, in which
+        # case the engine correctly declined to fire and this run must not hang.
         views = [await self._core.get_agent_run(run_id=rid) for rid in run.research_run_ids]
         if any(view is not None and not view.is_terminal for view in views):
             return run  # still researching
-
-        findings = []
-        for view in views:
-            if view is None or not view.succeeded:
-                continue
-            finding_set = extract_findings(view.messages)
-            if finding_set is not None:
-                findings.append(finding_set.model_dump())
-
-        if not findings:
-            return await self._fail(
-                run,
-                "Every research agent failed to return usable findings. "
-                "Nothing was found to build a shortlist from — try running again.",
-            )
-
-        instructions, model = await self._resolve_agent(SYNTHESIS_AGENT_NAME, self._synthesis_model)
-        synthesis_run_id = await self._core.request_agent_run(
-            agent_name=SYNTHESIS_AGENT_NAME,
-            definition=synthesis_definition(model=model, instructions=instructions),
-            output_tool=candidates_tool_schema(),
-            input_payload={
-                "profile": run.profile_snapshot,
-                "build_type": run.build_type,
-                "complexity": complexity_label(run.complexity),
-                "findings": findings,
-            },
+        if any(view is not None and view.succeeded for view in views):
+            # Terminal and at least one succeeded: the engine is entitled to a
+            # moment to react to the completion event. Stay put rather than
+            # racing it to a false failure.
+            return run
+        return await self._fail(
+            run,
+            "Every research agent failed to return usable findings. "
+            "Nothing was found to build a shortlist from — try running again.",
         )
-        await self._core.update_run(
-            run_id=run.id, status=SYNTHESISING, synthesis_run_id=synthesis_run_id
-        )
-        return _with(run, status=SYNTHESISING, synthesis_run_id=synthesis_run_id)
 
     async def _advance_synthesis(self, run: ScoutRun) -> ScoutRun:
         """Synthesis -> complete, storing the ranked candidates."""

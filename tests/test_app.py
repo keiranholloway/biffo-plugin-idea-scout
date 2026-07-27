@@ -134,6 +134,7 @@ def test_reading_a_run_advances_it_when_the_agents_have_finished(client, core):
     """This is the polling endpoint, and polling is what moves a run forward."""
     run_id = _start(client).json()["run_id"]
     core.complete_all_research(run_id)
+    core.engine_fires_synthesis(run_id)
 
     resp = client.get(f"/runs/{run_id}")
 
@@ -173,8 +174,9 @@ def test_candidates_are_empty_while_the_run_is_in_flight(client):
 def test_candidates_come_back_ranked_once_the_run_completes(client, core):
     run_id = _start(client).json()["run_id"]
     core.complete_all_research(run_id)
-    client.get(f"/runs/{run_id}")  # research -> synthesising
-    core.synthesis_run_for(run_id).complete(candidates_message(5))
+    synthesis = core.engine_fires_synthesis(run_id)
+    client.get(f"/runs/{run_id}")  # picks up the engine's synthesis run
+    synthesis.complete(candidates_message(5))
 
     resp = client.get(f"/runs/{run_id}/candidates")
 
@@ -194,10 +196,11 @@ def test_the_candidates_endpoint_alone_is_enough_to_drive_the_run(client, core):
     report the run's state."""
     run_id = _start(client).json()["run_id"]
     core.complete_all_research(run_id)
+    synthesis = core.engine_fires_synthesis(run_id)
 
     assert client.get(f"/runs/{run_id}/candidates").json()["status"] == m.SYNTHESISING
 
-    core.synthesis_run_for(run_id).complete(candidates_message(5))
+    synthesis.complete(candidates_message(5))
     assert client.get(f"/runs/{run_id}/candidates").json()["status"] == m.COMPLETE
 
 
