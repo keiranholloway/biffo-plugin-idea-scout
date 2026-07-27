@@ -30,6 +30,15 @@ require_admin = require_group("admin")
 
 _CORE_API_URL = os.environ.get("BIFFO_CORE_API_URL", "")
 _PLUGIN_NAME = "idea-scout"
+
+# How long to give a Core call, in seconds. Set explicitly and deliberately:
+# a bare ``httpx.AsyncClient()`` carries httpx's own 5s default, which nobody
+# here chose, and Core cold-starts in ~4.3s (init) + ~0.6s (handler) ≈ 4.9s.
+# That default therefore loses a race it was never entered into — the first
+# request after Core goes cold raises ``httpx.ReadTimeout`` and this app turns
+# it into a 500. 30.0 matches the SDK's ``BiffoAPIClient`` default, so every
+# path out of this plugin waits the same amount. See biffo-template#652.
+_CORE_TIMEOUT_SECONDS = 30.0
 _BUILD_TYPES_BASE = f"/api/v1/plugins/{_PLUGIN_NAME}/build-types"
 _CHAT_AGENTS_BASE = f"/api/v1/admin/plugins/{_PLUGIN_NAME}/chat-agents"
 
@@ -42,7 +51,7 @@ async def _core_request(
     """Forward one call to Core as the calling admin — not as this plugin's
     service principal (see the module docstring)."""
     url = f"{_CORE_API_URL.rstrip('/')}{path}"
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=_CORE_TIMEOUT_SECONDS) as client:
         resp = await client.request(
             method, url, json=json, headers={"Authorization": f"Bearer {admin.token}"}
         )
