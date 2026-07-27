@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node (an admin/frontend UI, if one is added later)
+node_modules/
+.next/
+out/
+
+# Terraform
+.terraform
+.terraform.lock.hcl
+.terraformrc
+terraform.rc
+
+# Env / local
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
