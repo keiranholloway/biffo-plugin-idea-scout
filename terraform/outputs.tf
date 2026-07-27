@@ -1,33 +1,16 @@
-output "function_arn" {
-  description = "Lambda function ARN — aggregate this in the root config's plugin outputs."
-  value       = module.function.function_arn
+# This module now provisions ONLY the frontend's S3 origin (ADR-0021 phase C —
+# the backend Lambda/API-Gateway ingress it used to provision was torn down;
+# ADR-0018 §2's per-plugin frontend hosting remains current until ADR-0021's
+# shared app-shell lands, biffo-template#558). frontend_bucket_regional_domain
+# -> cdn's sibling_origins (the <idea-scout>/* frontend behaviour).
+# frontend_bucket_name is the deploy target the built web/dist is synced to.
+
+output "frontend_bucket_regional_domain" {
+  description = "The frontend bucket's regional domain — the sibling_origins origin."
+  value       = aws_s3_bucket.frontend.bucket_regional_domain_name
 }
 
-output "function_name" {
-  value = module.function.function_name
-}
-
-# The plugin Lambda's execution role ARN. Useful for auditing, but note this is
-# deliberately NOT how the role reaches the Core API's
-# BIFFO_SERVICE_PRINCIPAL_ARN_ALLOWLIST — wiring this output into the core_api
-# module would create the dependency cycle core_api -> api_gateway -> plugin ->
-# core_api (issue #201). Allowlist the predictable assumed-role glob instead;
-# see README.md.
-output "role_arn" {
-  value = module.function.role_arn
-}
-
-output "role_name" {
-  description = "The plugin Lambda's execution role NAME — the value to interpolate into the Core API's BIFFO_SERVICE_PRINCIPAL_ARN_ALLOWLIST glob (arn:aws:sts::<acct>:assumed-role/<role-name>/*)."
-  value       = element(split("/", module.function.role_arn), length(split("/", module.function.role_arn)) - 1)
-}
-
-output "dlq_arn" {
-  description = "Dead letter queue ARN for failed invocations (both direct and EventBridge-triggered)."
-  value       = module.function.dlq_arn
-}
-
-output "event_rule_arn" {
-  description = "EventBridge rule ARN, or null when the plugin declares no event_subscriptions."
-  value       = local.has_subscriptions ? aws_cloudwatch_event_rule.subscription[0].arn : null
+output "frontend_bucket_name" {
+  description = "The frontend bucket name — the deploy target for the built web/dist."
+  value       = aws_s3_bucket.frontend.id
 }
