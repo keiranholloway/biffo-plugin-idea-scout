@@ -121,12 +121,15 @@ def test_the_snapshot_omits_fields_that_tell_an_agent_nothing():
     assert "updated_at" not in payload
 
 
-async def test_research_agents_get_the_search_tool_and_the_findings_output_tool():
+async def test_research_agents_get_no_registry_tool_and_the_findings_output_tool():
+    """Search rides on the ``:online`` model, so the run declares no registry
+    tool — a declared-but-unconfigured one is silently dropped, which is how the
+    first real run produced nothing."""
     core = FakeCoreGateway()
     await _start(core)
 
     for request in core.requested:
-        assert request["definition"]["tools"] == ["web_search"]
+        assert request["definition"]["tools"] == []
         assert request["output_tool"]["function"]["name"] == "submit_research_findings"
 
 

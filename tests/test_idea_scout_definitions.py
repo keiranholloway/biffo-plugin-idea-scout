@@ -110,9 +110,29 @@ def test_output_tools_are_never_listed_as_registry_tools():
         assert d.CANDIDATES_TOOL_NAME not in definition["tools"]
 
 
-def test_research_agents_search_and_the_synthesis_agent_does_not():
-    assert d.research_definition(model="m", instructions="i")["tools"] == ["web_search"]
+def test_no_agent_declares_a_registry_tool():
+    """Research reaches the web through the ``:online`` model suffix, not a
+    registry tool.
+
+    Declaring ``web_search`` here is what broke the first real run: it is gated
+    on a Brave credential, and ``resolve_tools`` *drops* a
+    registered-but-unconfigured tool with a warning instead of failing. On a
+    deployment without the key every research agent ran, found nothing, and the
+    run died at synthesis having paid for four model calls. An empty list cannot
+    fail that way.
+    """
+    assert d.research_definition(model="m", instructions="i")["tools"] == []
     assert d.synthesis_definition(model="m", instructions="i")["tools"] == []
+
+
+def test_research_instructions_do_not_name_a_tool_the_run_does_not_declare():
+    """The prompt told the model to "use the web_search tool" while the run
+    offered none, so the model replied that it had no such tool instead of
+    researching. Prompt and definition have to agree."""
+    for role, instructions in d.DEFAULT_INSTRUCTIONS.items():
+        if role == d.SYNTHESIS_AGENT_NAME:
+            continue
+        assert "web_search" not in instructions, role
 
 
 def test_definitions_carry_the_instructions_they_are_given():
