@@ -108,9 +108,41 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # gitleaks/gitleaks-action@v2 (what the plugin skeleton ships) does not
+      # work here. Two independent problems, both of which the core project's
+      # own ci.yml already solved the same way:
+      #
+      # 1. On this project's self-hosted runner fleet the action's SARIF upload
+      #    dies with "The rootDirectory: /home/ec2-user is not a parent
+      #    directory of the file: /opt/actions-runner/_work/.../results.sarif"
+      #    — the scan itself passes ("no leaks found") and the job still fails.
+      # 2. It requires a paid GITLEAKS_LICENSE for organization-owned repos.
+      #    This repo is personal today, so it wouldn't hit that yet, but the
+      #    moment it moves under an org the check breaks silently.
+      #
+      # Install the free, open-source gitleaks CLI directly instead. Same
+      # detection, no artifact upload, no license.
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz -C /usr/local/bin gitleaks
+          gitleaks version
+      # First pass: scan git history (fetch-depth: 0 above), catching secrets
+      # committed then removed within the same history.
+      #
+      # --log-opts is load-bearing: gitleaks' default git log arguments include
+      # `--all`, so with fetch-depth: 0 the scan covers commits that live only
+      # on *unmerged* branches — one bad commit on anyone's open branch then
+      # reddens dev and every open PR at once, with nothing in the built ref
+      # responsible for it. Scoping to HEAD restricts the scan to commits
+      # reachable from the ref under test without weakening detection.
+      - name: gitleaks git history scan
+        run: gitleaks detect --redact -v --exit-code=2 --log-opts="--full-history HEAD"
+      # Second pass: scan every file in the working tree (no-git mode), so
+      # secrets sitting in files no commit under test touched are caught too.
+      - name: gitleaks filesystem scan
+        run: gitleaks detect --no-git --redact -v --exit-code=2
 
   security-deps:
     name: Dependency Audit
