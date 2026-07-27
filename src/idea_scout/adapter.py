@@ -37,7 +37,15 @@ _CANDIDATES = f"{_ROOT}/owner-data/idea_scout_candidates"
 _AGENT_RUNS = f"{_ROOT}/agent-runs"
 _USER_PROFILE = f"{_ROOT}/user-profile/mine"
 _PLUGIN_CONFIG = f"{_ROOT}/plugins/me/config"
-_BUILD_TYPES = "/api/v1/plugins/idea-scout/build-types"
+# The manifest declares /build-types as a Core-generated CRUD route, so Core
+# serves it twice: publicly at /api/v1/plugins/idea-scout/build-types, and again
+# under /api/v1/internal/ (Core's #652 mount). Only the internal one is
+# reachable from here — API Gateway routes ALL of /api/v1/plugins/* to the shared
+# plugin host (ADR-0021), so the public path sends this plugin's own call back
+# into the host, whose founder gate reads Authorization/X-Biffo-Founder-Token and
+# not the X-Biffo-User-Token this transport forwards. Hence 401, and every run
+# failing at start. Like every other constant here, it must go to Core.
+_BUILD_TYPES = f"{_ROOT}/plugins/idea-scout/build-types"
 
 
 class CoreHttpError(Exception):

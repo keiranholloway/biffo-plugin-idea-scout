@@ -12,6 +12,7 @@ import json
 import pytest
 from fakes import FakeTransport
 
+from idea_scout import adapter
 from idea_scout.adapter import CoreHttpGateway, CoreNotFoundError
 from idea_scout.models import RESEARCHING
 
@@ -20,7 +21,7 @@ CANDIDATES = "/api/v1/internal/owner-data/idea_scout_candidates"
 AGENT_RUNS = "/api/v1/internal/agent-runs"
 PROFILE = "/api/v1/internal/user-profile/mine"
 CONFIG = "/api/v1/internal/plugins/me/config"
-BUILD_TYPES = "/api/v1/plugins/idea-scout/build-types"
+BUILD_TYPES = "/api/v1/internal/plugins/idea-scout/build-types"
 
 
 def _row(**overrides):
@@ -78,6 +79,35 @@ async def test_a_missing_profile_seam_surfaces_rather_than_reading_as_empty():
 
     with pytest.raises(CoreNotFoundError):
         await CoreHttpGateway(transport).get_user_profile(owner_sub="x")
+
+
+# ── Every seam this adapter reaches for ──────────────────────────────────────
+
+
+def test_every_adapter_path_targets_cores_internal_seam():
+    """Not style — the one thing that made every scout run 500 (#17).
+
+    ``/api/v1/plugins/*`` is routed by API Gateway to the shared plugin host
+    (ADR-0021), never to Core. A path under it therefore comes back into this
+    plugin's own host, whose founder gate reads ``Authorization``/
+    ``X-Biffo-Founder-Token`` — not the ``X-Biffo-User-Token`` CoreTransport
+    forwards — so the call 401s. Core mounts the same declared routes under
+    ``/api/v1/internal/`` for exactly this caller (Core's #652 mount).
+
+    Asserted over the module's constants rather than per-call, so a *new* seam
+    added later cannot reintroduce this without failing here. The per-endpoint
+    tests below cannot catch it: they assert against these same constants, so
+    they pass whatever the constant says.
+    """
+    paths = {
+        name: value
+        for name, value in vars(adapter).items()
+        if name.isupper() and isinstance(value, str) and value.startswith("/api/")
+    }
+
+    assert paths, "no adapter paths found — did the constants move or get renamed?"
+    assert adapter._ROOT == "/api/v1/internal"
+    assert [n for n, p in paths.items() if not p.startswith(adapter._ROOT)] == []
 
 
 # ── Build types ──────────────────────────────────────────────────────────────
