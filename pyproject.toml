@@ -69,6 +69,24 @@ ignore = [
   "ANN401",
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection helpers are *designed* to be called in argument
+# defaults — that call is the declaration, and moving it into the body (what
+# B008 asks for) breaks the framework. Ruff supports exactly this case; the
+# Ideation Engine carries the same list, and the plugin skeleton not shipping it
+# is the same divergence as keiranholloway/biffo-template#650.
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Path",
+  "fastapi.Body",
+  "fastapi.Header",
+  "fastapi.Cookie",
+  "fastapi.Form",
+  "fastapi.File",
+  "fastapi.Security",
+]
+
 [tool.ruff.lint.per-file-ignores]
 # S101: assert is the normal pytest idiom. ANN: test functions don't need
 # return-type annotations. S106: fakes.py's mock BiffoAPIClient(token=...)
