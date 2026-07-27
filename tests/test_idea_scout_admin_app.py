@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+import httpx
 import pytest
 from biffo_plugin_sdk import ForwardedUser
 from fastapi.testclient import TestClient
@@ -138,3 +139,70 @@ def test_every_admin_route_is_gated(method, path):
 def test_exposes_an_asgi_app_not_a_lambda_handler():
     assert hasattr(admin_module, "app")
     assert not hasattr(admin_module, "handler")
+
+
+# ── The Core client's timeout ────────────────────────────────────────────────
+#
+# These exercise the real ``_core_request`` — the fixtures above stub it out, so
+# nothing else in this file ever constructs the httpx client that the bug lives
+# in. What is pinned is that a timeout is passed *at all*: a bare
+# ``httpx.AsyncClient()`` silently inherits httpx's 5s default, which is shorter
+# than Core's ~4.9s cold start. See biffo-template#652.
+
+
+class _RecordingClient:
+    """Stands in for ``httpx.AsyncClient``, recording how it was constructed."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self.kwargs = kwargs
+        _RecordingClient.last_kwargs = kwargs
+
+    last_kwargs: dict[str, Any] = {}
+
+    async def __aenter__(self) -> _RecordingClient:
+        return self
+
+    async def __aexit__(self, *exc: Any) -> None:
+        return None
+
+    async def request(self, *args: Any, **kwargs: Any) -> Any:
+        return httpx.Response(200, json={"ok": True})
+
+
+@pytest.fixture
+def recorded_client(monkeypatch) -> type[_RecordingClient]:
+    _RecordingClient.last_kwargs = {}
+    monkeypatch.setattr(admin_module.httpx, "AsyncClient", _RecordingClient)
+    monkeypatch.setattr(admin_module, "_CORE_API_URL", "https://core.example")
+    return _RecordingClient
+
+
+async def test_the_core_client_is_given_an_explicit_timeout(recorded_client):
+    """Not httpx's default. The default is 5s, Core cold-starts in ~4.9s, so
+    leaving it unset makes the first request after a cold start a coin toss."""
+    admin = ForwardedUser(sub="admin-1", groups=["admin"], token="admin-token")
+
+    await admin_module._core_request("GET", "/api/v1/whatever", admin=admin)
+
+    assert "timeout" in recorded_client.last_kwargs, (
+        "httpx.AsyncClient was constructed with no timeout — it will inherit "
+        "httpx's 5s default, which is shorter than Core's cold start"
+    )
+
+
+async def test_the_timeout_clears_cores_cold_start(recorded_client):
+    """A number, and comfortably above the ~4.9s cold start rather than merely
+    above httpx's default."""
+    admin = ForwardedUser(sub="admin-1", groups=["admin"], token="admin-token")
+
+    await admin_module._core_request("GET", "/api/v1/whatever", admin=admin)
+
+    timeout = recorded_client.last_kwargs["timeout"]
+    assert isinstance(timeout, (int, float))
+    assert timeout >= 15.0, f"{timeout}s leaves no headroom over a ~4.9s cold start"
+
+
+def test_the_timeout_matches_the_sdk_client_default():
+    """So a call out of the admin app and a call out of ``BiffoAPIClient`` wait
+    the same amount — one plugin, one budget."""
+    assert admin_module._CORE_TIMEOUT_SECONDS == 30.0
