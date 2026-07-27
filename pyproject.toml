@@ -113,8 +113,7 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
-# "." so `from scripts.…` resolves; see conftest.py for why both are needed.
-pythonpath = ["src", "."]
+pythonpath = ["src", "tests"]
 
 [tool.coverage.run]
 source = ["src"]
