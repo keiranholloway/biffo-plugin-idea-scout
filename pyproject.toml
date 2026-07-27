@@ -20,7 +20,7 @@ dependencies = [
   # the real release exists. Use a local `[tool.uv.sources]` override until
   # then — see the README's "biffo-plugin-sdk dependency" section, which
   # documents both options and says which to delete once 1.0.0 is live.
-  "biffo-plugin-sdk>=1.0,<2.0",
+  "biffo-plugin-sdk[sigv4,user-serving]>=1.1,<2.0",
   "aws-lambda-powertools[tracer]>=3.4.0",
   "httpx>=0.28.1",
 ]
@@ -56,6 +56,17 @@ line-length = 100
 select = ["E", "F", "I", "N", "W", "B", "S", "UP", "ANN"]
 ignore = [
   "S101", # allow assert in tests
+  # ANN401 (no `Any` in annotations) fights the one place `Any` is the honest
+  # answer: the Core-API seam. transport.request / adapter.Transport return
+  # parsed JSON of a shape only the calling method knows, and `object` would
+  # force every caller to re-narrow what it already validated. The rest of ANN
+  # (missing annotations) is the valuable part and stays on.
+  #
+  # Note this whole `select` is stricter than the Ideation Engine's and than
+  # what the instance enforces once a plugin is vendored into services/<name>/
+  # — see keiranholloway/biffo-template#650, which proposes reconciling the
+  # three. If that lands by dropping ANN here, this ignore goes with it.
+  "ANN401",
 ]
 
 [tool.ruff.lint.per-file-ignores]
