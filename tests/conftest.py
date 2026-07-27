@@ -15,3 +15,16 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Test modules are named test_idea_scout_*.py, not test_*.py.
+#
+# Every plugin is vendored into biffo-platform as services/<name>/, and these
+# tests/ directories carry no __init__.py, so pytest's default import mode gives
+# each module its bare basename. Two plugins both shipping tests/test_manifest.py
+# then collide at collection with "import file mismatch" — in the *other*
+# plugin's tests, which nobody touched. That is exactly what installing this
+# plugin alongside the Ideation Engine did.
+#
+# --import-mode=importlib fixes the class properly but breaks other suites in the
+# instance that rely on the prepend behaviour, so the narrow fix wins: unique
+# basenames. See keiranholloway/biffo-template#686.

@@ -7,12 +7,17 @@ this definition are asserted rather than trusted.
 
 from __future__ import annotations
 
+from _scripts import load_script
+
 from idea_scout.definitions import (
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
     SYNTHESIS_INSTRUCTIONS,
 )
-from scripts.seed_fan_in_workflow import WORKFLOW_NAME, definition
+
+_seed = load_script("seed_fan_in_workflow")
+WORKFLOW_NAME = _seed.WORKFLOW_NAME
+definition = _seed.definition
 
 
 def test_it_waits_for_exactly_the_agents_the_plugin_requests():

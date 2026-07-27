@@ -5,13 +5,16 @@ rather than trusted.
 
 from __future__ import annotations
 
+from _scripts import load_script
+
 from idea_scout.definitions import (
     DEFAULT_INSTRUCTIONS,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
 )
-from scripts.seed_agent_config import payloads
-from scripts.seed_build_types import BUILD_TYPES
+
+payloads = load_script("seed_agent_config").payloads
+BUILD_TYPES = load_script("seed_build_types").BUILD_TYPES
 
 # ── Build types ──────────────────────────────────────────────────────────────
 
