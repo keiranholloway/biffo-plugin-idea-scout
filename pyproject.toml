@@ -91,7 +91,11 @@ extend-immutable-calls = [
 # S101: assert is the normal pytest idiom. ANN: test functions don't need
 # return-type annotations. S106: fakes.py's mock BiffoAPIClient(token=...)
 # is a fixed test fixture value, not a real credential.
-"tests/**/*.py" = ["S101", "ANN", "S106"]
+# S101: assert is the normal pytest idiom. ANN: test functions don't need
+# return-type annotations. S105/S106/S107: fixed fake credentials in fixtures
+# ("admin-token", "tok") are test data, not secrets — the Ideation Engine
+# carries the same set.
+"tests/**/*.py" = ["S101", "ANN", "S105", "S106", "S107"]
 
 [tool.ruff.format]
 quote-style = "double"
