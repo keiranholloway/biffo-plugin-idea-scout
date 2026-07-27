@@ -41,7 +41,13 @@ from .service import (
 )
 from .transport import CoreTransport
 
-_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", "anthropic/claude-sonnet-4")
+# Research runs on an OpenRouter ``:online`` model: the suffix attaches live web
+# results to the turn, so the search capability travels with the model id and
+# cannot be half-configured. The previous arrangement — a plain model plus the
+# ``web_search`` registry tool — failed open on a deployment with no Brave
+# credential: the tool was silently dropped and every run produced no findings.
+# Synthesis does not search; it reasons over what research hands it.
+_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", "anthropic/claude-sonnet-4:online")
 _SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", "anthropic/claude-opus-4-8")
 
 #: The founder gate — verifies the shared-Cognito JWT and requires the group.
