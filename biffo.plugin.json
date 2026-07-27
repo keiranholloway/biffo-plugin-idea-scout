@@ -1,89 +1,259 @@
 {
   "name": "idea-scout",
   "version": "0.1.0",
-  "description": "Reference example plugin shipped with the plugin repository template — a single table with generic list/create/read/delete routes. Replace this manifest with your own plugin's tables and routes.",
+  "description": "Idea Scout — identity-aware startup idea discovery. Reads a founder's own profile, takes a build-type category and a complexity preference, dispatches angle-specific research agents over web search, and returns 5–10 ranked candidate ideas each carrying a viability scorecard compatible with the Ideation Engine's, so a promising one can be pressure-tested straight away.",
   "author": "Biffo Team",
-  "tags": ["example"],
-  "required_core_version": ">=0.0.0",
+  "tags": ["ideation", "agentic", "product", "discovery"],
+  "required_core_version": ">=0.127.0",
+  "core_capabilities": {
+    "agent-run-request": "^1",
+    "agent-run-read": "^1",
+    "run-output-tool": "^1",
+    "owner-scoped-tables": "^1",
+    "chat-agent-registry": "^1",
+    "user-profile-read": "^1"
+  },
   "tables": [
     {
-      "name": "idea_scout_widgets",
+      "name": "idea_scout_runs",
       "columns": [
         {
-          "name": "name",
-          "type": "String(100)",
+          "name": "owner_sub",
+          "type": "String(64)",
           "nullable": false,
-          "description": "Widget name."
+          "description": "Cognito sub of the founder who owns this run — the owner-scope column for service access (ADR-0017 §5). All reads/writes go through Core's owner-scoped service routes; the table is NOT exposed via generic CRUD (which is tenant-scoped, not owner-scoped)."
         },
         {
-          "name": "description",
+          "name": "build_type",
+          "type": "String(64)",
+          "nullable": false,
+          "description": "The `key` of the idea_scout_build_types row this run was started for. A plain key, not a foreign key — plugin tables cannot declare FKs; the service validates it against the active list at start time."
+        },
+        {
+          "name": "complexity",
+          "type": "Integer",
+          "nullable": false,
+          "description": "The founder's complexity preference, 1 (small and niche) to 5 (high-complexity). Feeds the research brief; not a filter."
+        },
+        {
+          "name": "status",
+          "type": "String(20)",
+          "nullable": true,
+          "description": "researching | synthesising | complete | failed. Nullable because the generated migration DDL does not apply declared defaults (only the in-process model) — the service sets it explicitly on create."
+        },
+        {
+          "name": "research_run_ids",
           "type": "Text",
-          "nullable": true
+          "nullable": true,
+          "description": "The async agent-runtime run ids of this run's parallel research agents, as a JSON array string. Text, not JSON: Core's plugin-table type map has no JSON type, and an unknown type silently falls back to String, which would truncate."
         },
         {
-          "name": "is_active",
+          "name": "synthesis_run_id",
+          "type": "String(36)",
+          "nullable": true,
+          "description": "The async run that reconciled the research findings into ranked candidates. Set when the research fan-in completes."
+        },
+        {
+          "name": "profile_snapshot",
+          "type": "Text",
+          "nullable": true,
+          "description": "The founder profile the agents actually saw, as a JSON object string. Snapshotted so a run stays explicable after the founder edits their profile."
+        },
+        {
+          "name": "failure_reason",
+          "type": "Text",
+          "nullable": true,
+          "description": "Why a failed run failed, in terms a founder can read. Null unless status is failed."
+        },
+        {
+          "name": "deleted",
           "type": "Boolean",
           "nullable": true,
-          "description": "Nullable because declared column defaults are not applied by the generated migration DDL (only the in-process SQLAlchemy model) — see README's 'Known limitations' section. Treat NULL as false; this plugin's own on_install() always sets it explicitly."
+          "description": "Soft-delete flag. True means the founder removed this run from their sidebar; the row is never destroyed, just excluded from list_runs. Nullable for the same declared-default reason as status — treat NULL as false."
         }
       ],
       "indexes": [
         {
-          "name": "idx_idea_scout_widgets_tenant_name",
-          "columns": ["tenant_id", "name"],
+          "name": "idx_idea_scout_runs_owner",
+          "columns": ["tenant_id", "owner_sub"]
+        }
+      ],
+      "permissions": {
+        "list": { "allowed": false },
+        "read": { "allowed": false },
+        "create": { "allowed": false },
+        "update": { "allowed": false },
+        "delete": { "allowed": false }
+      },
+      "owner_scoped_service": {
+        "owner_column": "owner_sub",
+        "allowed_principals": ["system:idea-scout"]
+      }
+    },
+    {
+      "name": "idea_scout_candidates",
+      "columns": [
+        {
+          "name": "owner_sub",
+          "type": "String(64)",
+          "nullable": false,
+          "description": "Cognito sub of the founder who owns this candidate — denormalised from the run so candidates are owner-scoped uniformly, without a join (ADR-0017 §5)."
+        },
+        {
+          "name": "run_id",
+          "type": "String(36)",
+          "nullable": false,
+          "description": "The idea_scout_runs row that produced this candidate."
+        },
+        {
+          "name": "rank",
+          "type": "Integer",
+          "nullable": false,
+          "description": "1-based position in the synthesis agent's ranking. Stored rather than derived so the founder always sees the order the agent argued for."
+        },
+        {
+          "name": "title",
+          "type": "String(200)",
+          "nullable": false,
+          "description": "Short name for the idea."
+        },
+        {
+          "name": "pitch",
+          "type": "Text",
+          "nullable": false,
+          "description": "The idea itself, in a few sentences. This is what gets carried into the Ideation Engine as the seed idea when a founder promotes the candidate."
+        },
+        {
+          "name": "scorecard",
+          "type": "Text",
+          "nullable": true,
+          "description": "The viability scorecard as a JSON string (shape: idea_scout.definitions.Scorecard, deliberately the same four axes as the Ideation Engine's). Text for the same no-JSON-type reason as above."
+        },
+        {
+          "name": "sources",
+          "type": "Text",
+          "nullable": true,
+          "description": "The evidence the agents cited for this candidate, as a JSON array string of {url, note} objects."
+        },
+        {
+          "name": "model",
+          "type": "String(100)",
+          "nullable": true,
+          "description": "The model that produced this candidate."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_idea_scout_candidates_run",
+          "columns": ["tenant_id", "run_id"]
+        },
+        {
+          "name": "idx_idea_scout_candidates_owner",
+          "columns": ["tenant_id", "owner_sub"]
+        }
+      ],
+      "permissions": {
+        "list": { "allowed": false },
+        "read": { "allowed": false },
+        "create": { "allowed": false },
+        "update": { "allowed": false },
+        "delete": { "allowed": false }
+      },
+      "owner_scoped_service": {
+        "owner_column": "owner_sub",
+        "allowed_principals": ["system:idea-scout"]
+      }
+    },
+    {
+      "name": "idea_scout_build_types",
+      "columns": [
+        {
+          "name": "key",
+          "type": "String(64)",
+          "nullable": false,
+          "description": "Stable identifier stored on a run (e.g. 'micro-saas'). Relabelling must not orphan existing runs, so the key is what a run references."
+        },
+        {
+          "name": "label",
+          "type": "String(100)",
+          "nullable": false,
+          "description": "What the founder sees in the build-type picker (e.g. 'MicroSaaS')."
+        },
+        {
+          "name": "description",
+          "type": "Text",
+          "nullable": true,
+          "description": "One line on what this category means and what it implies for scope — shown under the label in the picker, and included in the research brief so the agents scope to it."
+        },
+        {
+          "name": "active",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Whether this category is offered today. Nullable because the generated migration DDL does not apply declared defaults — treat NULL as false; every create request sets it explicitly."
+        },
+        {
+          "name": "sort_order",
+          "type": "Integer",
+          "nullable": true,
+          "description": "Display order in the picker, ascending. Ties fall back to label."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_idea_scout_build_types_tenant_key",
+          "columns": ["tenant_id", "key"],
           "unique": true
         }
       ],
       "permissions": {
-        "list": { "allowed": true },
-        "read": { "allowed": true },
-        "create": { "allowed": true, "required_role": ["idea-scout.admin"] },
-        "delete": { "allowed": true, "required_role": ["idea-scout.admin"] }
+        "list": { "allowed": true, "required_role": [] },
+        "read": { "allowed": true, "required_role": [] },
+        "create": { "allowed": true, "required_role": ["admin"] },
+        "update": { "allowed": true, "required_role": ["admin"] },
+        "delete": { "allowed": true, "required_role": ["admin"] }
       }
     }
   ],
   "api_routes": [
     {
       "method": "GET",
-      "path": "/widgets",
-      "table": "idea_scout_widgets",
+      "path": "/build-types",
+      "table": "idea_scout_build_types",
       "operation": "list",
-      "description": "List widgets for the caller's tenant."
-    },
-    {
-      "method": "POST",
-      "path": "/widgets",
-      "table": "idea_scout_widgets",
-      "operation": "create",
-      "description": "Create a widget."
+      "description": "List build-type categories. Readable by any authenticated caller — the founder's run form needs it — while only an admin can change the list."
     },
     {
       "method": "GET",
-      "path": "/widgets/{id}",
-      "table": "idea_scout_widgets",
+      "path": "/build-types/{id}",
+      "table": "idea_scout_build_types",
       "operation": "read",
-      "description": "Get a single widget."
+      "description": "Get a single build-type category."
+    },
+    {
+      "method": "POST",
+      "path": "/build-types",
+      "table": "idea_scout_build_types",
+      "operation": "create",
+      "description": "Add a build-type category (admin only)."
+    },
+    {
+      "method": "PUT",
+      "path": "/build-types/{id}",
+      "table": "idea_scout_build_types",
+      "operation": "update",
+      "description": "Update a build-type category — relabel, re-describe, reorder, or toggle active (admin only)."
     },
     {
       "method": "DELETE",
-      "path": "/widgets/{id}",
-      "table": "idea_scout_widgets",
+      "path": "/build-types/{id}",
+      "table": "idea_scout_build_types",
       "operation": "delete",
-      "description": "Delete a widget."
+      "description": "Remove a build-type category (admin only). Prefer setting active=false: existing runs reference the key."
     }
   ],
-  "event_subscriptions": [
-    {
-      "source": "biffo.core",
-      "detail_type": "UserCreated",
-      "description": "Example subscription: logs newly created users. Replace with real logic, or remove this block if your plugin doesn't need it."
-    }
-  ],
-  "ui_components": [
-    { "type": "nav-link", "label": "Example Plugin", "path": "/admin/idea-scout" },
-    { "type": "page", "label": "Widgets", "path": "/admin/idea-scout/widgets" }
-  ],
+  "event_subscriptions": [],
+  "ui_components": [],
   "dependencies": {
-    "biffo-plugin-sdk": "^1.0"
+    "biffo-plugin-sdk": "^1.1"
   }
 }
