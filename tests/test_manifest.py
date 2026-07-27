@@ -187,3 +187,24 @@ def test_build_types_are_readable_by_founders_and_writable_only_by_admins():
     for write_op in ("create", "update", "delete"):
         assert permissions[write_op]["allowed"] is True
         assert permissions[write_op]["required_role"] == ["admin"]
+
+
+# ── Ingress (added once the apps existed — M5) ───────────────────────────────
+
+
+def test_it_declares_both_ingress_apps_and_they_are_importable():
+    """A manifest naming an import path that does not resolve deploys clean and
+    404s at runtime, which is the worst time to find out."""
+    import importlib
+
+    raw = _raw()
+    for block, expected_group in (("user_ingress", "founder"), ("admin_ingress", "admin")):
+        spec = raw[block]
+        assert spec["required_group"] == expected_group
+        module_path, _, attr = spec["app"].partition(":")
+        module = importlib.import_module(module_path)
+        assert hasattr(module, attr), spec["app"]
+
+
+def test_the_founder_frontend_points_at_the_build_output():
+    assert _raw()["user_frontend"] == {"dir": "web/dist", "required_group": "founder"}
