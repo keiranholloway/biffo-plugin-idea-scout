@@ -61,6 +61,68 @@ def _start(client: TestClient, **overrides):
     return client.post("/runs", json=body)
 
 
+# ── Preferences reach the service (#34) ──────────────────────────────────────
+#
+# These exist because the transport layer is where the feature actually broke.
+# The service tests called `start_run` with preferences directly, and the
+# frontend tests asserted `onStart` received them — so both ends were covered
+# and the seam between them was not. The deployed API accepted the keys,
+# validated them, echoed an empty list back, and silently discarded the input,
+# because `app.py` never passed `body.preferences` to the service.
+
+
+def test_the_posted_preferences_reach_the_service(client, core):
+    """The gap the earlier tests left. Asserted through what the SERVICE was
+    asked to do, not through the response, because the response echoed a stored
+    value and looked plausible while the input was being dropped."""
+    _start(client, preferences=["recurring-revenue", "regulated-markets"])
+
+    run = next(iter(core.runs.values()))
+    assert run.preferences == ["recurring-revenue", "regulated-markets"]
+
+
+def test_the_posted_preferences_reach_the_agents(client, core):
+    """One step further out: into the brief the research agents are given.
+    Storing them without briefing on them would be the #26 failure again."""
+    _start(client, preferences=["recurring-revenue"])
+
+    briefs = [r["input_payload"]["brief"] for r in core.requested if "brief" in r["input_payload"]]
+    assert briefs, "no research agent was briefed"
+    assert briefs[0]["preferences"] == [
+        {"key": "recurring-revenue", "direction": "prefer", "label": "Recurring revenue"}
+    ]
+
+
+def test_the_response_echoes_what_was_actually_stored(client):
+    resp = _start(client, preferences=["rapid-validation"])
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["preferences"] == ["rapid-validation"]
+
+
+def test_omitting_preferences_is_accepted_and_stores_none(client, core):
+    resp = _start(client)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["preferences"] == []
+    assert next(iter(core.runs.values())).preferences == []
+
+
+def test_an_unknown_preference_key_is_refused(client):
+    """422, not silently dropped — the prompts weigh by meaning and cannot
+    honour a key they do not know."""
+    resp = _start(client, preferences=["prefer-purple"])
+    assert resp.status_code == 422
+    assert "prefer-purple" in resp.text
+
+
+def test_the_preferences_endpoint_lists_all_ten_with_directions(client):
+    resp = client.get("/preferences")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body) == 10
+    assert {p["direction"] for p in body} == {"prefer", "avoid"}
+    assert all({"key", "direction", "label"} <= set(p) for p in body)
+
+
 # ── Inputs ───────────────────────────────────────────────────────────────────
 
 
