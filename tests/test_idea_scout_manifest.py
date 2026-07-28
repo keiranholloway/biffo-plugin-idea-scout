@@ -246,10 +246,22 @@ def test_admin_ingress_is_only_declared_when_an_admin_ui_can_actually_be_served(
         "will skip the UI build silently and GET /admin/ will 404 (#22)"
     )
     admin_source = (_ROOT / "src" / "idea_scout" / "admin_app.py").read_text()
-    assert "parent.parent.parent" not in admin_source, (
-        "admin_app.py resolves its static dir from __file__, which is wrong in "
-        "the deployed Lambda. Anchor on BIFFO_PLUGINS_ROOT — see "
-        "biffo-template#627/#632 and ideation's _resolve_static_dir (#22)"
+
+    # Assert the PROPERTY (anchored on BIFFO_PLUGINS_ROOT), not the absence of a
+    # substring. The first version of this guard banned "parent.parent.parent"
+    # — and then rejected the correct fix, because ideation's proven
+    # `_resolve_static_dir` keeps exactly that expression as its local-dev
+    # fallback. The defect in #22 was never the string; it was that the string
+    # was the *only* resolution, with no deployed anchor.
+    assert "BIFFO_PLUGINS_ROOT" in admin_source, (
+        "admin_app.py must resolve its static dir from BIFFO_PLUGINS_ROOT. The "
+        "deploy flattens src/ into the Lambda task root, so a purely "
+        "__file__-relative path lands one directory shallower than in a "
+        "checkout and 404s — see biffo-template#627/#632 and #22 defect 2."
+    )
+    assert "_resolve_static_dir" in admin_source, (
+        "keep the resolution in a named helper — it is the thing that has to be "
+        "read and understood before anyone changes it"
     )
 
 
