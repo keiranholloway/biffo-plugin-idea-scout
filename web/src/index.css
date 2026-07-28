@@ -19,10 +19,15 @@
  * `styles.test.ts` fails on.
  */
 
-@import '@biffo/design-tokens/tokens.css';
+@import "@biffo/design-tokens/tokens.css";
 
 :root {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
   color: var(--text);
   background: var(--bg-subtle);
   line-height: 1.55;
@@ -131,16 +136,33 @@ body {
   border: 1px solid var(--border);
 }
 
-.run-status[data-status='ready'] {
+.run-status[data-status="ready"] {
   background: var(--state-positive-soft);
   color: var(--state-positive);
   border-color: #cfe8dd;
 }
 
-.run-status[data-status='failed'] {
+.run-status[data-status="failed"] {
   background: var(--state-negative-soft);
   color: var(--state-negative);
   border-color: #f0d8d8;
+}
+
+/* Status and start time share a row beneath the build type, so a founder who
+   has run the same build type several times can tell the entries apart. */
+.run-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* Deliberately quieter than the status pill: the time is for disambiguating
+   between entries, not something to scan for. */
+.run-started {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .run-delete {
@@ -220,7 +242,7 @@ button:disabled {
 
 select,
 textarea,
-input[type='text'] {
+input[type="text"] {
   font: inherit;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--border-strong);
@@ -268,7 +290,7 @@ input[type='text'] {
   color: var(--text-muted);
 }
 
-.field input[type='range'] {
+.field input[type="range"] {
   width: 100%;
   accent-color: var(--brand);
 }
