@@ -26,10 +26,6 @@
     "dir": "web/dist",
     "required_group": "founder"
   },
-  "admin_ingress": {
-    "required_group": "admin",
-    "app": "idea_scout.admin_app:app"
-  },
   "tables": [
     {
       "name": "idea_scout_runs",

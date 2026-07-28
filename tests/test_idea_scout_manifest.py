@@ -21,6 +21,9 @@ from biffo_plugin_sdk.plugin import load_manifest
 
 from idea_scout.manifest import MANIFEST_PATH
 
+# The repo root: the manifest sits at the top level, so its parent is the root.
+_ROOT = MANIFEST_PATH.parent
+
 # Every Core capability this plugin binds, and the gateway call that needs it.
 # Adding a capability here without using it — or using a seam without declaring
 # it — is exactly the drift this test exists to catch.
@@ -192,18 +195,62 @@ def test_build_types_are_readable_by_founders_and_writable_only_by_admins():
 # ── Ingress (added once the apps existed — M5) ───────────────────────────────
 
 
-def test_it_declares_both_ingress_apps_and_they_are_importable():
+def test_every_declared_ingress_app_is_importable():
     """A manifest naming an import path that does not resolve deploys clean and
     404s at runtime, which is the worst time to find out."""
     import importlib
 
     raw = _raw()
-    for block, expected_group in (("user_ingress", "founder"), ("admin_ingress", "admin")):
+    declared = [b for b in ("user_ingress", "admin_ingress") if b in raw]
+    assert "user_ingress" in declared, "the founder-facing app is not optional"
+
+    for block in declared:
         spec = raw[block]
-        assert spec["required_group"] == expected_group
+        expected = {"user_ingress": "founder", "admin_ingress": "admin"}[block]
+        assert spec["required_group"] == expected
         module_path, _, attr = spec["app"].partition(":")
         module = importlib.import_module(module_path)
         assert hasattr(module, attr), spec["app"]
+
+
+def test_admin_ingress_is_only_declared_when_an_admin_ui_can_actually_be_served():
+    """Declaring `admin_ingress` promises an admin UI, and the deploy will not
+    say so if the promise is empty.
+
+    This plugin declared it with no `web-admin/` anywhere in the repo (#22). The
+    deploy step is `if jq -e '.admin_ingress' … && [ -d "$plugin_dir/web-admin" ]`
+    — the second condition failed, the build-and-copy was **skipped with no error
+    and no warning**, and `GET /admin/` 404'd. A CDN rule then rewrote that 404
+    into the marketing portal's HTML, so the visible symptom was an admin URL
+    apparently serving an unauthenticated page (biffo-template#647).
+
+    So the manifest is not the place to state an intention. Re-adding
+    `admin_ingress` requires the thing that makes it true, and this test is what
+    couples the two.
+
+    The path resolution is the second half of that (#22 defect 2): `__file__`
+    lands one directory shallower in the deployed Lambda than in a checkout,
+    because the deploy flattens `src/` into the task root, while the built assets
+    go to `BIFFO_PLUGINS_ROOT/<name>/web-admin/dist`. Ideation hit exactly this
+    and fixed it (biffo-template#627/#632); the copy here was never updated, so a
+    `web-admin/` alone would still have 404'd. Anyone re-enabling this must port
+    `_resolve_static_dir` rather than resurrect the `parent.parent.parent` form.
+    """
+    raw = _raw()
+    if "admin_ingress" not in raw:
+        return  # the current, honest state
+
+    web_admin = _ROOT / "web-admin"
+    assert web_admin.is_dir(), (
+        "admin_ingress is declared but web-admin/ does not exist — the deploy "
+        "will skip the UI build silently and GET /admin/ will 404 (#22)"
+    )
+    admin_source = (_ROOT / "src" / "idea_scout" / "admin_app.py").read_text()
+    assert "parent.parent.parent" not in admin_source, (
+        "admin_app.py resolves its static dir from __file__, which is wrong in "
+        "the deployed Lambda. Anchor on BIFFO_PLUGINS_ROOT — see "
+        "biffo-template#627/#632 and ideation's _resolve_static_dir (#22)"
+    )
 
 
 def test_the_founder_frontend_points_at_the_build_output():
