@@ -231,3 +231,22 @@ describe("weight preferences (#34)", () => {
     expect(screen.getByRole("button", { name: "Run now" })).toBeTruthy();
   });
 });
+
+describe("the promise made to a founder about waiting (#27)", () => {
+  it('gives a bound rather than an open-ended "a few minutes"', () => {
+    // A scout that hung for 255 minutes still said "finishes on its own", and a
+    // founder had no way to tell a slow scout from a dead one. The reaper now
+    // bounds it; the copy has to say so or the fix is invisible to them.
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/two to four minutes/i)).toBeTruthy();
+    expect(screen.getByText(/will not sit there indefinitely/i)).toBeTruthy();
+  });
+});

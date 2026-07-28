@@ -322,6 +322,10 @@ class IdeaScoutService:
             # moment to react to the completion event. Stay put rather than
             # racing it to a false failure.
             return run
+        if views and all(v is not None and v.never_started for v in views):
+            # None of them was ever claimed — the same delivery fault, one stage
+            # earlier. "Failed to return usable findings" would imply they ran.
+            return await self._fail(run, self.NEVER_STARTED_REASON)
         return await self._fail(
             run,
             "Every research agent failed to return usable findings. "
@@ -335,6 +339,11 @@ class IdeaScoutService:
         view = await self._core.get_agent_run(run_id=run.synthesis_run_id)
         if view is not None and not view.is_terminal:
             return run  # still synthesising
+        if view is not None and view.never_started:
+            # Reaped as unclaimed. Saying "the analysis failed" here would be
+            # false — it never ran — and sends the reader to look at the model
+            # or the prompt instead of at event delivery.
+            return await self._fail(run, self.NEVER_STARTED_REASON)
         if view is None or not view.succeeded:
             return await self._fail(
                 run, "The analysis that ranks and scores the ideas failed. Try running again."
@@ -360,6 +369,17 @@ class IdeaScoutService:
         await self._core.save_candidates(run_id=run.id, candidates=candidates, model=view.model)
         await self._core.update_run(run_id=run.id, status=COMPLETE)
         return _with(run, status=COMPLETE)
+
+    #: Shown when an agent run was never claimed by a runtime rather than having
+    #: run and gone wrong. The distinction matters to a founder: "it broke" invites
+    #: a retry of the same thing, "it never started" is an infrastructure problem
+    #: they cannot fix by retrying — though retrying IS the right move, because the
+    #: delivery failure is intermittent (biffo-platform#96).
+    NEVER_STARTED_REASON = (
+        "This scout never started — the work was queued but nothing picked it up, "
+        "so no research ran and nothing was charged for it. This is a fault on our "
+        "side, not with what you asked for. Running it again usually works."
+    )
 
     async def _fail(self, run: ScoutRun, reason: str) -> ScoutRun:
         await self._core.update_run(run_id=run.id, status=FAILED, failure_reason=reason)

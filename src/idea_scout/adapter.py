@@ -285,6 +285,7 @@ class CoreHttpGateway:
             status=run["status"],
             messages=run.get("messages") or [],
             model=model,
+            started_at=run.get("started_at"),
         )
 
     # ── Candidates ───────────────────────────────────────────────────────────

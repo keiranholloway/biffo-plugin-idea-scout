@@ -112,6 +112,8 @@ class AgentRunView:
     status: str
     messages: list[dict[str, object]] = field(default_factory=list)
     model: str | None = None
+    #: When a runtime claimed this run. None means nothing ever picked it up.
+    started_at: str | None = None
 
     @property
     def is_terminal(self) -> bool:
@@ -120,3 +122,18 @@ class AgentRunView:
     @property
     def succeeded(self) -> bool:
         return self.status == RUN_COMPLETED
+
+    @property
+    def never_started(self) -> bool:
+        """Terminal, unsuccessful, and never claimed by a runtime.
+
+        A run reaches `running` only by being claimed, so `started_at` is the
+        structural signal that nothing ever picked this one up — Core's reaper
+        fails it after `agent_run_unclaimed_after_seconds` (biffo-template#786).
+
+        Deliberately NOT a substring match on Core's error text. The reaper's
+        message is prose that can be reworded, and this project has twice
+        shipped a guard that keyed on a spelling and then blocked its own
+        correct fix. `started_at is None` is the property.
+        """
+        return self.is_terminal and not self.succeeded and self.started_at is None

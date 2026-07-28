@@ -134,8 +134,9 @@ export function RunForm({
       </button>
 
       <p className="run-form-note">
-        This takes a few minutes. You can close this tab — the scout finishes on its own and the
-        results will be here when you come back.
+        Usually two to four minutes. You can close this tab — the scout finishes on its own and
+        the results will be here when you come back. If something goes wrong it stops and tells
+        you; it will not sit there indefinitely.
       </p>
     </form>
   )
