@@ -538,3 +538,75 @@ def test_a_candidate_payload_round_trips_through_the_schema():
     from idea_scout.definitions import Candidate as CandidateModel
 
     assert CandidateModel.model_validate(candidate_payload("x")).title == "x"
+
+
+# ── Honest failure copy: never-started vs actually-failed (#27) ──────────────
+#
+# Core's reaper fails a run nothing ever claimed (biffo-template#786). Before
+# this, the founder was told "the analysis finished but returned nothing usable"
+# or "the analysis failed" — both of which say it RAN. It never did. That sends
+# the reader (and us) to look at the model or the prompt instead of at event
+# delivery, which is where the fault actually is (biffo-platform#96).
+
+
+async def test_a_synthesis_run_that_never_started_says_so():
+    core = FakeCoreGateway()
+    svc = _service(core)
+    run = await _start(core)
+    core.complete_all_research(run.id)
+    synthesis = core.engine_fires_synthesis(run.id)
+    # One poll picks up the engine's run (researching -> synthesising); the next
+    # evaluates it. Same two-step the real UI does, per `_run_to_completion`.
+    await svc.get_run(owner_sub=OWNER, run_id=run.id)
+    synthesis.never_claimed()
+
+    state = await svc.get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert state.status == m.FAILED
+    reason = state.failure_reason or ""
+    assert "never started" in reason.lower()
+    # The specific wrong claim this replaces.
+    assert "analysis" not in reason.lower(), reason
+
+
+async def test_research_runs_that_never_started_say_so():
+    """Same delivery fault, one stage earlier."""
+    core = FakeCoreGateway()
+    run = await _start(core)
+    for agent_run in core.research_runs_for(run.id):
+        agent_run.never_claimed()
+
+    state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert state.status == m.FAILED
+    assert "never started" in (state.failure_reason or "").lower()
+
+
+async def test_a_run_that_actually_ran_and_failed_still_says_that():
+    """Guards the guard. If `never_started` were true for every failure, the
+    two tests above would pass while the honest distinction was lost."""
+    core = FakeCoreGateway()
+    run = await _start(core)
+    for agent_run in core.research_runs_for(run.id):
+        agent_run.fail()  # claimed, ran, errored — started_at IS set
+
+    state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert state.status == m.FAILED
+    reason = (state.failure_reason or "").lower()
+    assert "never started" not in reason
+    assert "failed to return usable findings" in reason
+
+
+async def test_the_never_started_message_tells_the_founder_it_cost_nothing():
+    """A founder who thinks they have been charged for a failed run behaves
+    differently from one who knows they have not. Nothing was spent: the runs
+    were never claimed, so no model was ever called."""
+    core = FakeCoreGateway()
+    run = await _start(core)
+    for agent_run in core.research_runs_for(run.id):
+        agent_run.never_claimed()
+
+    state = await _service(core).get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert "nothing was charged" in (state.failure_reason or "").lower()

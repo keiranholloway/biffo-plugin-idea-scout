@@ -118,15 +118,36 @@ class FakeAgentRun:
         self.status = "pending"
         self.messages: list[dict[str, Any]] = []
         self.model: str | None = "test-model"
+        #: None until a runtime claims it — the signal the service uses to tell
+        #: "never started" from "started and failed".
+        self.started_at: str | None = None
         #: The chain this run belongs to — what makes sibling runs a set.
         self.causation_id: str | None = None
 
     def complete(self, messages: list[dict[str, Any]] | None = None) -> None:
         self.status = RUN_COMPLETED
+        self.started_at = self.started_at or "2026-07-28T00:00:00Z"
         self.messages = messages or []
 
     def fail(self) -> None:
+        """Claimed, ran, and errored — the ordinary failure.
+
+        Sets `started_at`, because a run only reaches `running` by being
+        claimed. Without it this fake was indistinguishable from a run nothing
+        ever picked up, and the service now tells a founder two different
+        things about those cases.
+        """
         self.status = RUN_FAILED
+        self.started_at = self.started_at or "2026-07-28T00:00:00Z"
+
+    def never_claimed(self) -> None:
+        """Failed WITHOUT ever being claimed — what Core's reaper does to a run
+        whose `agent.run.requested` was never delivered (biffo-template#786).
+
+        `started_at` stays None; that is the whole signal.
+        """
+        self.status = RUN_FAILED
+        self.started_at = None
 
 
 class FakeCoreGateway:
@@ -254,7 +275,11 @@ class FakeCoreGateway:
         for run in self.agent_runs.values():
             if run.causation_id == chain_id and run.agent_name == agent_name:
                 return AgentRunView(
-                    id=run.id, status=run.status, messages=run.messages, model=run.model
+                    id=run.id,
+                    status=run.status,
+                    messages=run.messages,
+                    model=run.model,
+                    started_at=run.started_at,
                 )
         return None
 
@@ -264,7 +289,13 @@ class FakeCoreGateway:
         run = self.agent_runs.get(run_id)
         if run is None:
             return None
-        return AgentRunView(id=run.id, status=run.status, messages=run.messages, model=run.model)
+        return AgentRunView(
+            id=run.id,
+            status=run.status,
+            messages=run.messages,
+            model=run.model,
+            started_at=run.started_at,
+        )
 
     # ── Candidates ───────────────────────────────────────────────────────────
 

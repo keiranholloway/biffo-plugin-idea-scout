@@ -245,7 +245,9 @@ export default function App() {
                 {current.status === "researching"
                   ? "Researching — three agents are searching for signals."
                   : "Reconciling the findings into ranked ideas."}{" "}
-                You can close this tab; it will finish without you.
+                You can close this tab; it will finish without you. This usually
+                takes two to four minutes, and if something goes wrong it stops
+                and tells you rather than hanging.
               </p>
             )}
 
