@@ -30,6 +30,7 @@ from typing import Any
 
 import pytest
 from fakes import FakeCoreGateway
+
 from idea_scout.definitions import RESEARCH_AGENT_NAMES
 from idea_scout.service import IdeaScoutService
 
