@@ -11,9 +11,22 @@ const AXES: ReadonlyArray<{ key: keyof Scorecard; label: string; hint?: string }
   { key: 'market_fit', label: 'Market fit' },
 ]
 
+/** Which band a score sits in, for the meter's colour.
+ *
+ * Bands, not a gradient, because these are judgements on a 1–5 scale and a
+ * continuous ramp would imply a precision the model does not have. Note the
+ * scale is magnitude, never goodness: `complexity` is inverted (5 = simple to
+ * build), so a colour meaning "good" would be actively wrong on that axis.
+ */
+function band(score: number): string {
+  if (score >= 4) return 'axis--high'
+  if (score <= 2) return 'axis--low'
+  return 'axis--mid'
+}
+
 function Axis({ label, hint, axis }: { label: string; hint?: string; axis: ScoreAxis }) {
   return (
-    <div className="axis">
+    <div className={`axis ${band(axis.score)}`}>
       <div className="axis-head">
         <span className="axis-label">
           {label}
@@ -24,6 +37,13 @@ function Axis({ label, hint, axis }: { label: string; hint?: string; axis: Score
         <span className="axis-score" aria-label={`${label}: ${axis.score} out of 5`}>
           {axis.score}/5
         </span>
+      </div>
+      {/* Decorative: the score is already announced by the head's aria-label,
+          so the pips are hidden from assistive tech rather than repeating it. */}
+      <div className="axis-meter" aria-hidden="true">
+        {[1, 2, 3, 4, 5].map((pip) => (
+          <span key={pip} className={pip <= axis.score ? 'axis-pip axis-pip--on' : 'axis-pip'} />
+        ))}
       </div>
       <p className="axis-rationale">{axis.rationale}</p>
     </div>

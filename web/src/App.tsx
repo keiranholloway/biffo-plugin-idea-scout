@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { CandidateCard } from './components/CandidateCard'
 import { RunForm } from './components/RunForm'
-import { createApi, type BuildType, type Candidate, type ComplexityLevel, type RunState } from './lib/api'
+import {
+  ApiError,
+  createApi,
+  type BuildType,
+  type Candidate,
+  type ComplexityLevel,
+  type RunState,
+} from './lib/api'
 import { getCurrentSession } from './lib/auth'
 
 /** How often to re-read an in-flight run.
@@ -23,6 +30,10 @@ export default function App() {
   const [current, setCurrent] = useState<RunState | null>(null)
   const [candidates, setCandidates] = useState<Candidate[]>([])
   const [starting, setStarting] = useState(false)
+  // Whether the first load actually returned. Without this an *unloaded* app and
+  // one that loaded an empty list are indistinguishable, and the empty-list copy
+  // blames an admin (#23).
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const api = useRef(createApi(() => idToken))
@@ -53,8 +64,20 @@ export default function App() {
         setBuildTypes(types)
         setComplexityLevels(levels)
         setRuns(existing)
+        setLoaded(true)
       })
-      .catch((err: unknown) => setError(describe(err)))
+      .catch((err: unknown) => {
+        // A 401 here means the portal session has expired, not that this
+        // founder lacks access. Treating it as signed-out shows the sign-in
+        // prompt instead of RunForm's "an admin needs to add a category" —
+        // which is what a stale token used to render as, sending people to
+        // look for configuration that was never missing (#23).
+        if (err instanceof ApiError && err.status === 401) {
+          setSignedIn(false)
+          return
+        }
+        setError(describe(err))
+      })
   }, [idToken])
 
   const openRun = useCallback(async (runId: string) => {
@@ -136,8 +159,10 @@ export default function App() {
           {runs.map((run) => (
             <li key={run.run_id} className={run.run_id === current?.run_id ? 'active' : undefined}>
               <button type="button" onClick={() => void openRun(run.run_id)}>
-                <span className="run-type">{run.build_type}</span>
-                <span className="run-status">{statusLabel(run)}</span>
+                <span className="run-type">{typeLabel(buildTypes, run.build_type)}</span>
+                <span className="run-status" data-status={statusLabel(run)}>
+                  {statusLabel(run)}
+                </span>
               </button>
               <button
                 type="button"
@@ -156,17 +181,19 @@ export default function App() {
         <h1>Idea Scout</h1>
         {error != null && <p className="error">{error}</p>}
 
-        {current == null ? (
+        {current == null && !loaded && <p className="muted">Loading…</p>}
+
+        {current == null && loaded ? (
           <RunForm
             buildTypes={buildTypes}
             complexityLevels={complexityLevels}
             busy={starting}
             onStart={(type, complexity) => void startRun(type, complexity)}
           />
-        ) : (
+        ) : current == null ? null : (
           <>
             <div className="run-header">
-              <span className="run-type">{current.build_type}</span>
+              <span className="run-type">{typeLabel(buildTypes, current.build_type)}</span>
               <span className="run-complexity">{current.complexity_label}</span>
               <button type="button" onClick={() => setCurrent(null)}>
                 New scout
@@ -196,6 +223,16 @@ export default function App() {
       </main>
     </div>
   )
+}
+
+/** The build type's human label, falling back to its key.
+ *
+ * Runs store the `key` (`micro-saas`); only the build-types list knows it is
+ * called "MicroSaaS". The fallback matters: a run started against a category an
+ * admin has since removed still has to render as something.
+ */
+function typeLabel(buildTypes: BuildType[], key: string): string {
+  return buildTypes.find((type) => type.key === key)?.label ?? key
 }
 
 function statusLabel(run: RunState): string {
