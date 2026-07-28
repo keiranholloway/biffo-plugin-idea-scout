@@ -184,7 +184,10 @@ async def start_run(
     """Start a scout: reads the founder's profile, briefs the research agents,
     and returns the run to poll."""
     run = await svc.start_run(
-        owner_sub=founder.sub, build_type=body.build_type, complexity=body.complexity
+        owner_sub=founder.sub,
+        build_type=body.build_type,
+        complexity=body.complexity,
+        preferences=body.preferences,
     )
     return _run_state(run)
 
