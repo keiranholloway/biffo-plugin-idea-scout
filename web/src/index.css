@@ -6,35 +6,22 @@
  * `button`/`input` selectors, which is why the app rendered as one run-on line
  * of browser defaults with branded buttons dropped into it.
  *
- * Colours mirror the portal's tokens (apps/frontend globals.css) rather than
- * inventing a third palette — this app is embedded in an iframe inside that
- * portal, so a different brand blue reads as a different product. They are
- * copied, not imported: the plugin deploys separately and shares no build with
- * the portal. A shared token package is the right answer and is not this change.
+ * The palette is NOT defined here. It comes from `@biffo/design-tokens`, the
+ * one definition shared by the portal, sibling apps and every plugin frontend.
+ * This file used to carry its own copy of those values — correct at the time,
+ * because the plugin deploys separately and shares no bundler with the portal,
+ * but a copy that drifts the moment either side changes. The import is a real
+ * npm dependency resolved at build time, so there is no runtime fetch and
+ * nothing to fail in the browser.
+ *
+ * Add app-specific variables below the import if this app ever needs one the
+ * platform should not own. Re-declaring a *shared* token here is what
+ * `styles.test.ts` fails on.
  */
 
+@import '@biffo/design-tokens/tokens.css';
+
 :root {
-  --brand: #5457ee;
-  --brand-strong: #4043c9;
-  --brand-soft: #eef0ff;
-  --bg-subtle: #f6f7fb;
-  --surface: #ffffff;
-  --text: #0f172a;
-  --text-muted: #545d72;
-  --border: #e7e9f1;
-  --border-strong: #d7dae6;
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --radius: 14px;
-  --radius-sm: 9px;
-
-  /* Score colours. Deliberately not red/amber/green: every axis here is a
-     judgement, not a pass/fail, and "2/5 moat" is information rather than an
-     alarm. Build complexity is inverted (5 = simple), so the scale has to read
-     as magnitude rather than goodness. */
-  --score-high: #3f8f6b;
-  --score-mid: #9a7b2f;
-  --score-low: #8a5a5a;
-
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--text);
   background: var(--bg-subtle);
@@ -145,14 +132,14 @@ body {
 }
 
 .run-status[data-status='ready'] {
-  background: #e8f5ef;
-  color: var(--score-high);
+  background: var(--state-positive-soft);
+  color: var(--state-positive);
   border-color: #cfe8dd;
 }
 
 .run-status[data-status='failed'] {
-  background: #fbeeee;
-  color: var(--score-low);
+  background: var(--state-negative-soft);
+  color: var(--state-negative);
   border-color: #f0d8d8;
 }
 
@@ -168,8 +155,8 @@ body {
 }
 
 .run-delete:hover {
-  background: #fbeeee;
-  color: var(--score-low);
+  background: var(--state-negative-soft);
+  color: var(--state-negative);
 }
 
 .main {
@@ -201,7 +188,7 @@ body {
 }
 
 .error {
-  background: #fbeeee;
+  background: var(--state-negative-soft);
   border: 1px solid #f0d8d8;
   color: #8a1c1c;
   padding: 0.7rem 0.9rem;
@@ -436,22 +423,22 @@ input[type='text'] {
 }
 
 .axis-pip--on {
-  background: var(--score-mid);
+  background: var(--state-caution);
 }
 
 /* All three bands stated explicitly, including the one that matches the
    default. `axis--mid` relying on inheritance meant a class was emitted with no
    rule behind it — invisible, and exactly what the coverage guard flags. */
 .axis--high .axis-pip--on {
-  background: var(--score-high);
+  background: var(--state-positive);
 }
 
 .axis--mid .axis-pip--on {
-  background: var(--score-mid);
+  background: var(--state-caution);
 }
 
 .axis--low .axis-pip--on {
-  background: var(--score-low);
+  background: var(--state-negative);
 }
 
 .axis-rationale {

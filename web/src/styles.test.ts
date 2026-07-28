@@ -32,6 +32,13 @@ const SRC = join(process.cwd(), 'src')
 // rule look present.
 const CSS = readFileSync(join(SRC, 'index.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 
+// The published token surface, read from the installed package rather than
+// restated here — a second list would be one more thing to drift.
+const PACKAGE_TOKENS = readFileSync(
+  join(process.cwd(), 'node_modules/@biffo/design-tokens/tokens.css'),
+  'utf8',
+)
+
 /** Every `className="…"` literal in the component tree, split into names.
  *
  * Deliberately literal-only. Template-interpolated names (`axis ${band(...)}`)
@@ -82,6 +89,37 @@ describe('index.css covers the classes this app emits', () => {
     // unstyled" would then be vacuously true — the same shape of vacuous pass
     // this file exists to catch.
     expect(classNamesUsed().size).toBeGreaterThan(20)
+  })
+
+  /**
+   * The palette lives in `@biffo/design-tokens`, not here.
+   *
+   * This file used to declare its own copy of `--brand`, `--surface`, `--text`
+   * and the rest. That was a deliberate copy at the time — the plugin deploys
+   * separately and shares no bundler with the portal — but it is exactly how
+   * three surfaces ended up with three different brand blues. Re-declaring a
+   * shared token locally silently wins over the import, so the app would look
+   * right while being disconnected from the platform's definition.
+   *
+   * App-specific variables are still fine; the check is only that a token the
+   * package owns is not redefined here.
+   */
+  it('does not re-declare a token the shared package owns', () => {
+    const shared = new Set(
+      [...PACKAGE_TOKENS.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]),
+    )
+    const localised = [...CSS.matchAll(/(--[a-z0-9-]+)\s*:/g)]
+      .map((m) => m[1])
+      .filter((name) => shared.has(name))
+
+    expect([...new Set(localised)]).toEqual([])
+  })
+
+  it('imports the shared tokens, so the variables it uses are actually defined', () => {
+    // Without the import every `var(--brand)` silently falls back to nothing
+    // and the app renders unstyled — the same failure mode as the stylesheet
+    // that matched no classes, arriving through a different door.
+    expect(CSS).toMatch(/@import\s+['"]@biffo\/design-tokens\/tokens\.css['"]/)
   })
 
   it('is not another plugin_s stylesheet', () => {
