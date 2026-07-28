@@ -15,7 +15,10 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "types": ["vitest/globals", "@testing-library/jest-dom"]
+    // "node" is needed by src/styles.test.ts, which reads index.css and the
+    // component sources off disk — Vitest stubs CSS imports (`css: false`), so a
+    // `?raw` import would hand the check an empty stylesheet and pass vacuously.
+    "types": ["vitest/globals", "@testing-library/jest-dom", "node"]
   },
   "include": ["src", "vite.config.ts"]
 }

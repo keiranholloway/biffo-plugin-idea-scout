@@ -1,62 +1,559 @@
+/* Idea Scout's own stylesheet.
+ *
+ * It previously carried the Ideation Engine's CSS verbatim — every rule keyed
+ * on `.ide-*`, while this app emits `.candidate`, `.scorecard`, `.run-form` and
+ * friends. Nothing matched: 57 rules loaded and styled nothing but the bare
+ * `button`/`input` selectors, which is why the app rendered as one run-on line
+ * of browser defaults with branded buttons dropped into it.
+ *
+ * Colours mirror the portal's tokens (apps/frontend globals.css) rather than
+ * inventing a third palette — this app is embedded in an iframe inside that
+ * portal, so a different brand blue reads as a different product. They are
+ * copied, not imported: the plugin deploys separately and shares no build with
+ * the portal. A shared token package is the right answer and is not this change.
+ */
+
 :root {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  color: #1a1a2e;
-  background: #f7f7fb;
+  --brand: #5457ee;
+  --brand-strong: #4043c9;
+  --brand-soft: #eef0ff;
+  --bg-subtle: #f6f7fb;
+  --surface: #ffffff;
+  --text: #0f172a;
+  --text-muted: #545d72;
+  --border: #e7e9f1;
+  --border-strong: #d7dae6;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --radius: 14px;
+  --radius-sm: 9px;
+
+  /* Score colours. Deliberately not red/amber/green: every axis here is a
+     judgement, not a pass/fail, and "2/5 moat" is information rather than an
+     alarm. Build complexity is inverted (5 = simple), so the scale has to read
+     as magnitude rather than goodness. */
+  --score-high: #3f8f6b;
+  --score-mid: #9a7b2f;
+  --score-low: #8a5a5a;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg-subtle);
+  line-height: 1.55;
 }
-* { box-sizing: border-box; }
-body { margin: 0; }
-.ide-layout { display: flex; min-height: 100vh; }
-.ide-sidebar { width: 250px; background: #fff; border-right: 1px solid #e3e3ee; padding: 1rem; overflow-y: auto; }
-.ide-sidebar-header { margin-bottom: 1rem; }
-.ide-sidebar-new { width: 100%; }
-.ide-sidebar-list { list-style: none; padding: 0; margin: 0; }
-.ide-sidebar-row { display: flex; gap: .3rem; align-items: flex-start; margin: .3rem 0; }
-.ide-sidebar-item { background: none; border: none; flex: 1; text-align: left; padding: .6rem .7rem; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: .3rem; color: inherit; }
-.ide-sidebar-item:hover { background: #f3f3f7; }
-.ide-sidebar-item--active { background: #e0e7ff; }
-.ide-sidebar-delete { background: none; border: none; padding: .6rem .3rem; cursor: pointer; color: #999; font-size: 1.2rem; line-height: 1; border-radius: 4px; }
-.ide-sidebar-delete:hover { color: #d32f2f; background: #fff3f3; }
-.ide-sidebar-item-title { font-weight: 600; font-size: .95rem; }
-.ide-sidebar-item-meta { display: flex; justify-content: space-between; font-size: .75rem; color: #667; }
-.ide-sidebar-item-date { }
-.ide-sidebar-item-status { padding: .2rem .4rem; border-radius: 4px; background: #f0f0f5; }
-.ide-sidebar-item-status--complete { background: #d1fae5; color: #065f46; }
-.ide-sidebar-item-status--gathering { background: #fef3c7; color: #92400e; }
-.ide-sidebar-item-status--analysing { background: #dbeafe; color: #1e40af; }
-.ide-sidebar-empty { color: #667; font-size: .9rem; margin: 1rem 0; }
-.ide { max-width: 760px; margin: 0 auto; padding: 2rem 1.25rem 4rem; flex: 1; }
-.ide h1 { font-size: 1.6rem; }
-.ide-error { background: #fdecea; color: #8a1c1c; padding: .6rem .8rem; border-radius: 8px; margin: .5rem 0; }
-.ide-seed textarea, .ide-compose input, .ide-seed { width: 100%; }
-textarea, input { font: inherit; padding: .6rem .7rem; border: 1px solid #cdd; border-radius: 8px; }
-button { font: inherit; padding: .5rem .9rem; border: 0; border-radius: 8px; background: #4338ca; color: #fff; cursor: pointer; }
-button:disabled { background: #b7b7c9; cursor: not-allowed; }
-.ide-messages { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
-.ide-msg { padding: .6rem .85rem; border-radius: 10px; max-width: 85%; }
-.ide-msg p { margin: .2rem 0 0; white-space: pre-wrap; }
-.ide-who { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #667; }
-.ide-msg--you { align-self: flex-end; background: #e0e7ff; }
-.ide-msg--ideation { align-self: flex-start; background: #fff; border: 1px solid #e3e3ee; }
-.ide-compose { display: flex; gap: .5rem; align-items: center; margin-top: 1rem; flex-wrap: wrap; }
-.ide-compose input { flex: 1 1 12rem; }
-.ide-finalise { background: #059669; }
-.ide-turns { font-size: .8rem; color: #667; }
-.ide-use-original { background: none; border: 1px solid #2563eb; color: #2563eb; margin-bottom: 1rem; width: 100%; }
-.ide-agent-picker { display: flex; flex-direction: column; gap: .3rem; font-size: .85rem; color: #445; margin: .75rem 0; }
-.ide-agent-picker select { font: inherit; padding: .5rem .6rem; border: 1px solid #cdd; border-radius: 8px; }
-.ide-analysing { color: #4338ca; font-weight: 600; }
-.ide-report { background: #fff; border: 1px solid #e3e3ee; border-top: 3px solid #2563eb; border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem; }
-.ide-summary { font-size: 1.05rem; }
-.ide-axes { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; margin: 1rem 0; }
-.ide-axis { border: 1px solid #eee; border-radius: 8px; padding: .6rem .7rem; }
-.ide-axis-head { display: flex; justify-content: space-between; align-items: center; }
-.ide-axis-label { display: flex; align-items: center; gap: .5rem; }
-.ide-icon { width: 18px; height: 18px; flex-shrink: 0; }
-.ide-score { padding: .2rem .4rem; border-radius: 4px; font-weight: 700; }
-.ide-score--good { background: #d1fae5; color: #065f46; }
-.ide-score--mid { background: #fef3c7; color: #92400e; }
-.ide-score--weak { background: #fee2e2; color: #991b1b; }
-.ide-report-block { border: 1px solid #eee; border-radius: 8px; padding: .7rem .9rem; margin: .75rem 0; }
-.ide-report-block ul { margin: .4rem 0 0; padding-left: 1.1rem; }
-.ide-report h3 { margin: 0 0 .3rem; }
-@media (max-width: 560px) { .ide-axes { grid-template-columns: 1fr; } }
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+/* ── Shell ──────────────────────────────────────────────────────────────── */
+
+.layout {
+  display: flex;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+.sidebar {
+  flex: 0 0 260px;
+  align-self: stretch;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 1.5rem 1rem;
+}
+
+.sidebar h2 {
+  margin: 0 0 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.sidebar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sidebar li {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar li:hover {
+  background: var(--bg-subtle);
+}
+
+.sidebar li.active {
+  background: var(--brand-soft);
+}
+
+/* The row button is a plain surface, not a pill — it used to inherit the global
+   filled-button style, which is why four runs rendered as a stack of solid blue
+   lozenges reading "micro-saasready". */
+.sidebar li > button:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  background: none;
+  border: 0;
+  padding: 0.55rem 0.6rem;
+  border-radius: var(--radius-sm);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar li > button:first-child:hover {
+  background: none;
+}
+
+.run-type {
+  font-weight: 600;
+  font-size: 0.9rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A chip, so status reads as metadata instead of running into the type. */
+.run-status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.run-status[data-status='ready'] {
+  background: #e8f5ef;
+  color: var(--score-high);
+  border-color: #cfe8dd;
+}
+
+.run-status[data-status='failed'] {
+  background: #fbeeee;
+  color: var(--score-low);
+  border-color: #f0d8d8;
+}
+
+.run-delete {
+  background: none;
+  border: 0;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  color: #9aa1b4;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.run-delete:hover {
+  background: #fbeeee;
+  color: var(--score-low);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+  /* A reading measure. Without one the rationales ran the full viewport —
+     ~234 characters per line at 1920px, roughly three times readable. */
+  max-width: 78ch;
+  margin: 0 auto;
+  padding: 2.25rem 1.5rem 5rem;
+}
+
+.main > h1 {
+  margin: 0 0 1.25rem;
+  font-size: 1.55rem;
+  letter-spacing: -0.01em;
+}
+
+.signed-out {
+  max-width: 34rem;
+  margin: 15vh auto;
+  padding: 0 1.5rem;
+  text-align: center;
+}
+
+.muted {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  background: #fbeeee;
+  border: 1px solid #f0d8d8;
+  color: #8a1c1c;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Controls ───────────────────────────────────────────────────────────── */
+
+button {
+  font: inherit;
+  padding: 0.55rem 1rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--brand);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--brand-strong);
+}
+
+button:disabled {
+  background: var(--border-strong);
+  color: #7a8195;
+  cursor: not-allowed;
+}
+
+select,
+textarea,
+input[type='text'] {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* ── Run form ───────────────────────────────────────────────────────────── */
+
+.run-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+}
+
+/* The whole reason the form read as one sentence: label, control and hint had
+   no block context, so they laid out inline. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  width: 100%;
+  max-width: 30rem;
+}
+
+.field-label {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.field-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.field input[type='range'] {
+  width: 100%;
+  accent-color: var(--brand);
+}
+
+.run-form-empty {
+  display: block;
+  color: var(--text-muted);
+}
+
+.run-form-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* ── Open-run header ────────────────────────────────────────────────────── */
+
+.run-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.run-header .run-type {
+  font-size: 1rem;
+}
+
+.run-complexity {
+  flex: 1;
+  min-width: 12rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.in-flight {
+  background: var(--brand-soft);
+  border: 1px solid #dfe3ff;
+  color: var(--brand-strong);
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+}
+
+/* ── Candidate card ─────────────────────────────────────────────────────── */
+
+.candidate {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.candidate-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.7rem;
+  margin-bottom: 0.5rem;
+}
+
+/* The rank was a bare "#1" floating on its own line above the title. */
+.candidate-rank {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.9rem;
+  height: 1.9rem;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.candidate-title {
+  margin: 0;
+  font-size: 1.18rem;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.candidate-pitch {
+  margin: 0 0 1.25rem;
+  color: var(--text-muted);
+}
+
+/* ── Scorecard ──────────────────────────────────────────────────────────── */
+
+.scorecard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.axis {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.8rem 0.9rem;
+  background: var(--bg-subtle);
+}
+
+/* `Viability4/5` — label and score were adjacent inline spans with nothing
+   between them. */
+.axis-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.axis-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.axis-hint {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.axis-score {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+/* Five pips, so the score reads at a glance without pretending a judgement is
+   a measurement. The number stays — this is an addition, not a replacement. */
+.axis-meter {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 0.5rem;
+}
+
+.axis-pip {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.axis-pip--on {
+  background: var(--score-mid);
+}
+
+/* All three bands stated explicitly, including the one that matches the
+   default. `axis--mid` relying on inheritance meant a class was emitted with no
+   rule behind it — invisible, and exactly what the coverage guard flags. */
+.axis--high .axis-pip--on {
+  background: var(--score-high);
+}
+
+.axis--mid .axis-pip--on {
+  background: var(--score-mid);
+}
+
+.axis--low .axis-pip--on {
+  background: var(--score-low);
+}
+
+.axis-rationale {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.candidate-summary {
+  margin: 0 0 0.75rem;
+  padding-left: 0.85rem;
+  border-left: 3px solid var(--brand-soft);
+  font-size: 0.95rem;
+}
+
+.candidate-buildbuy {
+  margin: 0 0 1rem;
+  font-size: 0.92rem;
+}
+
+.candidate-competitors {
+  margin-bottom: 1rem;
+}
+
+.candidate-competitors h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.candidate-competitors ul,
+.candidate-sources ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.candidate-competitors li,
+.candidate-sources li {
+  margin-bottom: 0.3rem;
+}
+
+.candidate-sources {
+  margin-bottom: 1.1rem;
+  font-size: 0.88rem;
+}
+
+.candidate-sources summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.candidate-sources a {
+  overflow-wrap: anywhere;
+}
+
+a {
+  color: var(--brand-strong);
+}
+
+/* The one action on the card, so it looks like one. */
+.candidate-promote {
+  display: inline-block;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  color: var(--brand-strong);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.candidate-promote:hover {
+  background: var(--brand-soft);
+}
+
+/* ── Narrow ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .layout {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    flex: none;
+    width: 100%;
+    align-self: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 1rem;
+  }
+
+  .main {
+    padding: 1.5rem 1rem 4rem;
+  }
+
+  .scorecard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
