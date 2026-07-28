@@ -181,3 +181,32 @@ jobs:
       # Build last: a bundle that type-checks but does not build is still a
       # broken deploy, and web/dist is what the manifest's user_frontend ships.
       - run: pnpm run build
+
+  # web-admin/ is a separate pnpm project with its own lockfile (not a workspace
+  # member of web/), so it needs its own job rather than another step above.
+  #
+  # Its absence is how #22 happened in the other direction: the manifest declared
+  # an admin UI, no CI ran against one, and nothing noticed there was no source
+  # tree at all. A second frontend with no job is indistinguishable from a
+  # working one.
+  admin-frontend:
+    name: Admin frontend (lint, types, test, build)
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    defaults:
+      run:
+        working-directory: web-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web-admin/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile --ignore-workspace
+      - run: pnpm run lint
+      - run: pnpm run typecheck
+      - run: pnpm run test
+      - run: pnpm run build

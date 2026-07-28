@@ -1,0 +1,213 @@
+/* Idea Scout admin. Shares the design tokens the rest of the estate uses so the
+   panel does not become a third brand blue (the drift @biffo/design-tokens was
+   created to end). */
+@import '@biffo/design-tokens/tokens.css';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  color: var(--text, #1b1c1f);
+  background: var(--bg, #f7f8fa);
+}
+
+.page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+h1 {
+  font-size: 1.55rem;
+  margin: 0 0 0.35rem;
+}
+
+h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.75rem;
+}
+
+.muted {
+  color: var(--text-muted, #5b6070);
+  font-size: 0.9rem;
+  margin: 0 0 1.25rem;
+}
+
+.error {
+  background: var(--state-negative-soft, #fdeaea);
+  color: var(--state-negative, #8c2b2b);
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ── the list ─────────────────────────────────────────────────────────────── */
+
+.build-types {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.build-types th,
+.build-types td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+  vertical-align: top;
+}
+
+.build-types th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #5b6070);
+}
+
+/* Hidden categories stay legible — an admin needs to read one to decide whether
+   to bring it back — but must not look offered. */
+.inactive {
+  opacity: 0.62;
+}
+
+.type-label {
+  display: block;
+  font-weight: 600;
+}
+
+.type-description {
+  display: block;
+  color: var(--text-muted, #5b6070);
+  font-size: 0.82rem;
+  margin-top: 0.15rem;
+  max-width: 32rem;
+}
+
+.type-status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: var(--bg-subtle, #eef0f4);
+  color: var(--text-muted, #5b6070);
+  white-space: nowrap;
+}
+
+.type-status[data-active='yes'] {
+  background: var(--state-positive-soft, #e6f4ee);
+  color: var(--state-positive, #1f6b4d);
+}
+
+.type-actions {
+  white-space: nowrap;
+}
+
+.type-actions button + button {
+  margin-left: 0.35rem;
+}
+
+/* ── the form ─────────────────────────────────────────────────────────────── */
+
+.build-type-form {
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  padding: 1.1rem 1.2rem;
+  background: var(--surface, #fff);
+  margin-top: 1.25rem;
+  max-width: 34rem;
+}
+
+.build-type-form label {
+  display: block;
+  margin-bottom: 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.build-type-form input,
+.build-type-form textarea {
+  display: block;
+  width: 100%;
+  margin-top: 0.3rem;
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+  font-weight: 400;
+  border: 1px solid var(--border, #cfd3dc);
+  border-radius: 6px;
+  background: var(--bg, #fff);
+}
+
+.build-type-form input:disabled {
+  background: var(--bg-subtle, #eef0f4);
+  color: var(--text-muted, #5b6070);
+}
+
+.hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--text-muted, #5b6070);
+}
+
+.field-error {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--state-negative, #8c2b2b);
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.checkbox input {
+  width: auto;
+  margin-top: 0;
+}
+
+.form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+button {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.42rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border, #cfd3dc);
+  background: var(--surface, #fff);
+  color: var(--text, #1b1c1f);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--brand, #4f46e5);
+  border-color: var(--brand, #4f46e5);
+  color: #fff;
+}
