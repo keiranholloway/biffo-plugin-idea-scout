@@ -98,6 +98,7 @@ def _run_from_row(row: dict[str, Any]) -> ScoutRun:
         research_run_ids=_load_json(row.get("research_run_ids"), default=[]),
         synthesis_run_id=row.get("synthesis_run_id"),
         profile_snapshot=_load_json(row.get("profile_snapshot"), default=None),
+        preferences=_load_json(row.get("preferences"), default=[]) or [],
         failure_reason=row.get("failure_reason"),
         created_at=row.get("created_at"),
         deleted=row.get("deleted") or False,
@@ -185,6 +186,7 @@ class CoreHttpGateway:
         build_type: str,
         complexity: int,
         profile_snapshot: dict[str, Any],
+        preferences: list[str],
         research_run_ids: list[str],
         chain_id: str,
     ) -> ScoutRun:
@@ -198,6 +200,7 @@ class CoreHttpGateway:
                 "status": RESEARCHING,
                 "research_run_ids": json.dumps(research_run_ids),
                 "profile_snapshot": json.dumps(profile_snapshot),
+                "preferences": json.dumps(preferences),
                 "deleted": False,
             },
         )
@@ -220,7 +223,7 @@ class CoreHttpGateway:
         body = dict(fields)
         # The two JSON-bearing columns are the caller's plain Python values;
         # serialise here so no caller has to know the column is Text.
-        for column in ("research_run_ids", "profile_snapshot"):
+        for column in ("research_run_ids", "profile_snapshot", "preferences"):
             if column in body and not isinstance(body[column], str):
                 body[column] = json.dumps(body[column])
         await self._t.request("PATCH", f"{_RUNS}/{run_id}", json=body)

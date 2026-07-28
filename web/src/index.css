@@ -300,6 +300,43 @@ input[type="text"] {
   color: var(--text-muted);
 }
 
+/* Weight preferences (#34). Grouped by direction because "lean towards" and
+   "steer away from" are different questions, and a flat list of ten made the
+   founder read each label to work out which way it pointed. */
+.preferences {
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  padding: 0.85rem 1rem 0.35rem;
+  margin: 0 0 1rem;
+}
+
+.preference-group {
+  margin-bottom: 0.75rem;
+}
+
+.preference-group-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #5b6070);
+  margin-bottom: 0.3rem;
+}
+
+.preference {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.87rem;
+  padding: 0.12rem 0;
+}
+
+.preference input {
+  width: auto;
+  margin: 0;
+}
+
 .run-form-note {
   margin: 0;
   font-size: 0.85rem;

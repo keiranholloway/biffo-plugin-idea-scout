@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .adapter import CoreHttpGateway
-from .definitions import MAX_COMPLEXITY, MIN_COMPLEXITY, complexity_label
+from .definitions import MAX_COMPLEXITY, MIN_COMPLEXITY, PREFERENCES, complexity_label
 from .models import IN_FLIGHT_STATUSES
 from .service import (
     IdeaScoutError,
@@ -38,6 +38,7 @@ from .service import (
     MalformedCandidatesError,
     RunNotFoundError,
     UnknownBuildTypeError,
+    UnknownPreferenceError,
 )
 from .transport import CoreTransport
 
@@ -76,6 +77,7 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     RunNotFoundError: 404,
     UnknownBuildTypeError: 422,
     InvalidComplexityError: 422,
+    UnknownPreferenceError: 422,
     MalformedCandidatesError: 502,
 }
 
@@ -96,6 +98,12 @@ class StartRunRequest(BaseModel):
 
     build_type: str = Field(min_length=1, max_length=64)
     complexity: int = Field(ge=MIN_COMPLEXITY, le=MAX_COMPLEXITY)
+    # Weight preferences (#34). Optional and defaulted empty: expressing none is
+    # a real answer, and defaulting to any subset would shape results from an
+    # input the founder never made. Keys are validated against the known set in
+    # the service, not here — the same place the build type is checked, so both
+    # rejections read the same way.
+    preferences: list[str] = Field(default_factory=list, max_length=len(PREFERENCES))
 
 
 def _run_state(run: Any) -> dict[str, Any]:
@@ -107,6 +115,9 @@ def _run_state(run: Any) -> dict[str, Any]:
         "build_type": run.build_type,
         "complexity": run.complexity,
         "complexity_label": complexity_label(run.complexity),
+        # Echoed back so the UI can show what a past run was actually asked for
+        # — a run stays explicable after the founder changes their mind (#34).
+        "preferences": list(run.preferences),
         "created_at": run.created_at,
         "in_flight": run.status in IN_FLIGHT_STATUSES,
         "failure_reason": run.failure_reason,
@@ -132,6 +143,20 @@ async def list_build_types(
     """The active build-type categories, for the run form's picker."""
     types = await svc.list_build_types()
     return [{"key": t.key, "label": t.label, "description": t.description} for t in types]
+
+
+@app.get("/preferences")
+async def list_preferences(
+    founder: ForwardedUser = Depends(require_founder),
+) -> list[dict]:
+    """The weight preferences a founder can express, and which way each leans.
+
+    Served rather than hardcoded in the frontend for the same reason as the
+    complexity levels: the wording the founder reads must be the wording the
+    agents are briefed with. Two copies drift, and the UI's is the one that
+    would be wrong.
+    """
+    return [dict(p) for p in PREFERENCES]
 
 
 @app.get("/complexity-levels")

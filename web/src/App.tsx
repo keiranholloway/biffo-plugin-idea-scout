@@ -8,6 +8,7 @@ import {
   type BuildType,
   type Candidate,
   type ComplexityLevel,
+  type Preference,
   type RunState,
 } from "./lib/api";
 import { getCurrentSession } from "./lib/auth";
@@ -26,6 +27,7 @@ export default function App() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   const [buildTypes, setBuildTypes] = useState<BuildType[]>([]);
+  const [preferences, setPreferences] = useState<Preference[]>([]);
   const [complexityLevels, setComplexityLevels] = useState<ComplexityLevel[]>(
     [],
   );
@@ -61,11 +63,13 @@ export default function App() {
     void Promise.all([
       api.current.getBuildTypes(),
       api.current.getComplexityLevels(),
+      api.current.getPreferences(),
       api.current.listRuns(),
     ])
-      .then(([types, levels, existing]) => {
+      .then(([types, levels, prefs, existing]) => {
         setBuildTypes(types);
         setComplexityLevels(levels);
+        setPreferences(prefs);
         setRuns(existing);
         setLoaded(true);
       })
@@ -119,11 +123,15 @@ export default function App() {
     return () => clearInterval(timer);
   }, [current]);
 
-  async function startRun(buildType: string, complexity: number) {
+  async function startRun(
+    buildType: string,
+    complexity: number,
+    prefs: string[] = [],
+  ) {
     setStarting(true);
     setError(null);
     try {
-      const run = await api.current.startRun(buildType, complexity);
+      const run = await api.current.startRun(buildType, complexity, prefs);
       setCurrent(run);
       setCandidates([]);
       setRuns(await api.current.listRuns());
@@ -214,8 +222,11 @@ export default function App() {
           <RunForm
             buildTypes={buildTypes}
             complexityLevels={complexityLevels}
+            preferences={preferences}
             busy={starting}
-            onStart={(type, complexity) => void startRun(type, complexity)}
+            onStart={(type, complexity, prefs) =>
+              void startRun(type, complexity, prefs)
+            }
           />
         ) : current == null ? null : (
           <>

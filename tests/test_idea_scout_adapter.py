@@ -229,6 +229,7 @@ async def test_creating_a_run_serialises_the_json_columns_and_sends_no_owner():
         build_type="micro-saas",
         complexity=3,
         profile_snapshot={"headline": "Fractional CTO"},
+        preferences=["recurring-revenue", "regulated-markets"],
         research_run_ids=["a", "b", "c"],
         chain_id="chain-1",
     )
@@ -240,6 +241,9 @@ async def test_creating_a_run_serialises_the_json_columns_and_sends_no_owner():
     # Text columns: strings on the wire, not nested JSON.
     assert body["research_run_ids"] == json.dumps(["a", "b", "c"])
     assert json.loads(body["profile_snapshot"]) == {"headline": "Fractional CTO"}
+    # Same Text-column treatment as the other JSON-bearing columns (#34): a list
+    # sent as a nested array would be coerced to String and truncated.
+    assert body["preferences"] == json.dumps(["recurring-revenue", "regulated-markets"])
 
 
 async def test_reading_a_run_parses_the_json_columns_back():

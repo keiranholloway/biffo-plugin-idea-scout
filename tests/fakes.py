@@ -190,6 +190,7 @@ class FakeCoreGateway:
         build_type: str,
         complexity: int,
         profile_snapshot: dict[str, Any],
+        preferences: list[str],
         research_run_ids: list[str],
         chain_id: str,
     ) -> ScoutRun:
@@ -202,6 +203,7 @@ class FakeCoreGateway:
             status=RESEARCHING,
             research_run_ids=list(research_run_ids),
             profile_snapshot=profile_snapshot,
+            preferences=list(preferences),
             created_at=f"2026-07-27T00:00:{len(self.runs):02d}Z",
         )
         self.runs[run.id] = run

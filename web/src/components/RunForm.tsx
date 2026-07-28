@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { BuildType, ComplexityLevel } from '../lib/api'
+import type { BuildType, ComplexityLevel, Preference } from '../lib/api'
 
 /** The run setup: what to look for, and how ambitious.
  *
@@ -12,16 +12,22 @@ import type { BuildType, ComplexityLevel } from '../lib/api'
 export function RunForm({
   buildTypes,
   complexityLevels,
+  preferences,
   busy,
   onStart,
 }: {
   buildTypes: BuildType[]
   complexityLevels: ComplexityLevel[]
+  preferences: Preference[]
   busy: boolean
-  onStart: (buildType: string, complexity: number) => void
+  onStart: (buildType: string, complexity: number, preferences: string[]) => void
 }) {
   const [buildType, setBuildType] = useState<string>('')
   const [complexity, setComplexity] = useState<number>(3)
+  // Nothing is pre-selected, deliberately. A default here would shape every
+  // result from an input the founder never made — the invisible-input failure
+  // this plugin has already had twice (#26, #29).
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set())
 
   const selected = buildTypes.find((t) => t.key === buildType)
   const level = complexityLevels.find((l) => l.value === complexity)
@@ -45,7 +51,7 @@ export function RunForm({
       className="run-form"
       onSubmit={(event) => {
         event.preventDefault()
-        if (buildType !== '') onStart(buildType, complexity)
+        if (buildType !== '') onStart(buildType, complexity, [...chosen])
       }}
     >
       <label className="field">
@@ -86,6 +92,42 @@ export function RunForm({
           {level?.label ?? ''}
         </span>
       </label>
+
+      {preferences.length > 0 && (
+        <fieldset className="preferences" disabled={busy}>
+          <legend className="field-label">What matters to you? (optional)</legend>
+          <p className="field-hint">
+            Preferences, not filters — a strong idea that cuts against one still appears, with
+            the trade-off named.
+          </p>
+          {(['prefer', 'avoid'] as const).map((direction) => {
+            const group = preferences.filter((p) => p.direction === direction)
+            if (group.length === 0) return null
+            return (
+              <div className="preference-group" key={direction}>
+                <span className="preference-group-label">
+                  {direction === 'prefer' ? 'Lean towards' : 'Steer away from'}
+                </span>
+                {group.map((p) => (
+                  <label className="preference" key={p.key}>
+                    <input
+                      type="checkbox"
+                      checked={chosen.has(p.key)}
+                      onChange={(event) => {
+                        const next = new Set(chosen)
+                        if (event.target.checked) next.add(p.key)
+                        else next.delete(p.key)
+                        setChosen(next)
+                      }}
+                    />
+                    {p.label}
+                  </label>
+                ))}
+              </div>
+            )
+          })}
+        </fieldset>
+      )}
 
       <button type="submit" disabled={busy || buildType === ''}>
         {busy ? 'Starting…' : 'Run now'}

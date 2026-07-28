@@ -52,6 +52,7 @@ class CoreGateway(Protocol):
         build_type: str,
         complexity: int,
         profile_snapshot: dict[str, Any],
+        preferences: list[str],
         research_run_ids: list[str],
         chain_id: str,
     ) -> ScoutRun: ...
