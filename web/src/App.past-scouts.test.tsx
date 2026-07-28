@@ -29,6 +29,7 @@ vi.mock("./lib/api", async (importOriginal) => {
     // as "no rows rendered", which reads exactly like the feature being broken.
     createApi: () => ({
       listRuns,
+      getPreferences: () => Promise.resolve([]),
       getBuildTypes: () =>
         Promise.resolve([
           { key: "micro-saas", label: "MicroSaaS", description: null },

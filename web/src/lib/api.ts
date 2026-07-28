@@ -33,12 +33,20 @@ export interface ComplexityLevel {
   label: string
 }
 
+export interface Preference {
+  key: string
+  /** `prefer` lifts an idea that satisfies it; `avoid` weighs against one that violates it. */
+  direction: 'prefer' | 'avoid'
+  label: string
+}
+
 export interface RunState {
   run_id: string
   status: RunStatus
   build_type: string
   complexity: number
   complexity_label: string
+  preferences: string[]
   created_at: string | null
   in_flight: boolean
   failure_reason: string | null
@@ -111,8 +119,9 @@ export function createApi(getIdToken: () => string | null) {
   return {
     getBuildTypes: () => request<BuildType[]>('GET', '/build-types'),
     getComplexityLevels: () => request<ComplexityLevel[]>('GET', '/complexity-levels'),
-    startRun: (build_type: string, complexity: number) =>
-      request<RunState>('POST', '/runs', { build_type, complexity }),
+    getPreferences: () => request<Preference[]>('GET', '/preferences'),
+    startRun: (build_type: string, complexity: number, preferences: string[] = []) =>
+      request<RunState>('POST', '/runs', { build_type, complexity, preferences }),
     listRuns: () => request<RunState[]>('GET', '/runs'),
     getRun: (id: string) => request<RunState>('GET', `/runs/${id}`),
     getCandidates: (id: string) => request<CandidatesResponse>('GET', `/runs/${id}/candidates`),

@@ -81,6 +81,9 @@ class ScoutRun:
     research_run_ids: list[str] = field(default_factory=list)
     synthesis_run_id: str | None = None
     profile_snapshot: dict[str, object] | None = None
+    #: Weight-preference keys the founder chose for this run (#34). Empty
+    #: means none expressed, which is a real answer rather than a missing one.
+    preferences: list[str] = field(default_factory=list)
     failure_reason: str | None = None
     created_at: str | None = None
     deleted: bool = False

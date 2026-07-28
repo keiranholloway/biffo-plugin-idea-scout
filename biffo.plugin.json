@@ -79,6 +79,12 @@
           "description": "The founder profile the agents actually saw, as a JSON object string. Snapshotted so a run stays explicable after the founder edits their profile."
         },
         {
+          "name": "preferences",
+          "type": "Text",
+          "nullable": true,
+          "description": "The founder's weight preferences for this run, as a JSON array of keys from idea_scout.definitions.PREFERENCES (issue #34). Snapshotted like profile_snapshot so a run stays explicable after the list changes. Text, not JSON: Core's plugin-table type map has no JSON type, and an unknown type silently falls back to String, which would truncate. Nullable because runs created before this column existed have no selection, and an empty selection is meaningful (no preferences expressed) rather than an error."
+        },
+        {
           "name": "failure_reason",
           "type": "Text",
           "nullable": true,

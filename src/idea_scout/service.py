@@ -38,12 +38,14 @@ from .definitions import (
     MAX_CANDIDATES,
     MAX_COMPLEXITY,
     MIN_COMPLEXITY,
+    PREFERENCE_KEYS,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
     CandidateSet,
     FindingSet,
     complexity_label,
     findings_tool_schema,
+    preference_brief,
     research_definition,
 )
 from .models import (
@@ -73,6 +75,19 @@ class UnknownBuildTypeError(IdeaScoutError):
 
 class InvalidComplexityError(IdeaScoutError):
     """Complexity outside the slider's range."""
+
+
+class UnknownPreferenceError(IdeaScoutError):
+    """One or more preference keys are not in the known set (#34).
+
+    Loud rather than silent: the prompts weigh preferences by meaning, so a key
+    they do not recognise cannot be honoured. A client sending a stale key should
+    learn that, not receive a run that quietly ignored half its input.
+    """
+
+    def __init__(self, keys: list[str]) -> None:
+        self.keys = keys
+        super().__init__(f"Unknown preference key(s): {', '.join(sorted(keys))}")
 
 
 class MalformedCandidatesError(IdeaScoutError):
@@ -160,15 +175,38 @@ class IdeaScoutService:
 
     # ── Starting a run ───────────────────────────────────────────────────────
 
-    async def start_run(self, *, owner_sub: str, build_type: str, complexity: int) -> ScoutRun:
+    async def start_run(
+        self,
+        *,
+        owner_sub: str,
+        build_type: str,
+        complexity: int,
+        preferences: list[str] | None = None,
+    ) -> ScoutRun:
         """Validate the inputs, brief the three research agents, and record the run.
 
         The build type is validated against the *active* list rather than trusted:
         it arrives from a client, and an inactive or invented category would brief
         agents on something an admin has deliberately withdrawn.
+
+        ``preferences`` are validated the same way and for the same reason — an
+        invented key would reach the prompts, which weigh preferences by meaning
+        and have nothing to say about one they do not know. Rejected loudly
+        rather than dropped, so a client sending a stale key learns it is stale
+        instead of silently getting an unweighted run (#34).
+
+        An empty selection is valid and means "no preferences expressed". It is
+        deliberately not defaulted to anything: a default that silently shapes
+        results is the invisible-input failure this plugin has already had twice
+        (#26, #29).
         """
         if not MIN_COMPLEXITY <= complexity <= MAX_COMPLEXITY:
             raise InvalidComplexityError(complexity)
+
+        chosen_preferences = list(preferences or [])
+        unknown = [k for k in chosen_preferences if k not in PREFERENCE_KEYS]
+        if unknown:
+            raise UnknownPreferenceError(unknown)
 
         build_types = await self._core.list_build_types(active_only=True)
         chosen = next((t for t in build_types if t.key == build_type), None)
@@ -176,7 +214,12 @@ class IdeaScoutService:
             raise UnknownBuildTypeError(build_type)
 
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
-        brief = self._build_brief(profile=profile, build_type=chosen, complexity=complexity)
+        brief = self._build_brief(
+            profile=profile,
+            build_type=chosen,
+            complexity=complexity,
+            preferences=chosen_preferences,
+        )
 
         # One chain for all three, generated here because the run row does not
         # exist yet — and because this is what makes them a *set* the engine's
@@ -201,6 +244,7 @@ class IdeaScoutService:
             build_type=build_type,
             complexity=complexity,
             profile_snapshot=_profile_payload(profile),
+            preferences=chosen_preferences,
             research_run_ids=research_run_ids,
             chain_id=chain_id,
         )
@@ -344,7 +388,11 @@ class IdeaScoutService:
 
     @staticmethod
     def _build_brief(
-        *, profile: UserProfile, build_type: BuildType, complexity: int
+        *,
+        profile: UserProfile,
+        build_type: BuildType,
+        complexity: int,
+        preferences: list[str],
     ) -> dict[str, Any]:
         """What the agents are told about who this run is for.
 
@@ -364,6 +412,11 @@ class IdeaScoutService:
         }
         if not profile.is_empty:
             brief["profile"] = _profile_payload(profile)
+        # Omitted entirely when nothing was chosen, for the same reason an empty
+        # profile is omitted: an empty list invites the model to reason about a
+        # preference set that does not exist.
+        if preferences:
+            brief["preferences"] = preference_brief(preferences)
         return brief
 
 
