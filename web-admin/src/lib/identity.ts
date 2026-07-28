@@ -1,7 +1,7 @@
 // Runtime core identity — same mechanism as the founder-facing web/'s own
 // identity.ts (ADR-0007). This used to fetch admin_app's own /identity route
 // instead, on the theory that this app (served by the plugin host at
-// /api/v1/plugins/ideation/admin/*) is a different origin from the portal and
+// /api/v1/plugins/idea-scout/admin/*) is a different origin from the portal and
 // so can't reach /.well-known/biffo-identity.json directly. That theory was
 // wrong: both are served from the same dev.biffo.io origin. The self-served
 // /identity route also turned out to be a dead end even for same-origin
