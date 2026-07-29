@@ -41,7 +41,6 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from idea_scout.definitions import (  # noqa: E402
-    DEFAULT_SYNTHESIS_MODEL,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
     SYNTHESIS_MAX_TURNS,
@@ -52,7 +51,7 @@ WORKFLOW_NAME = "Idea Scout — synthesise once research completes"
 _DEFINITIONS_PATH = "/api/v1/admin/orchestration/workflows"
 
 
-def definition(*, model: str) -> dict:  # noqa: ARG001
+def definition() -> dict:
     """The workflow this plugin needs in order to finish a run on its own.
 
     Triggered by every ``agent.run.completed``: the fan-in action itself decides
@@ -61,9 +60,11 @@ def definition(*, model: str) -> dict:  # noqa: ARG001
     three times per run (once per research agent), and the action's own
     all-siblings-terminal check is what collapses those three into one.
 
-    The ``instructions`` and ``model`` are no longer included here — Core resolves
-    them from the plugin's seeded config at agent-run creation time, so an admin's
-    edits now take effect immediately.
+    Carries no ``instructions`` and no ``model``: Core resolves both from the
+    plugin's seeded config at agent-run creation, which is what makes an admin's
+    edit take effect. This function therefore takes **no model argument** — one
+    would be silently ignored, which is the defect (idea-scout#64) this whole
+    change removes rather than relocates.
     """
     return {
         "name": WORKFLOW_NAME,
@@ -98,14 +99,9 @@ def main() -> int:
         action="store_true",
         help="overwrite an existing definition of the same name",
     )
-    parser.add_argument(
-        "--model",
-        default=os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL),
-        help="model for the synthesis agent",
-    )
     args = parser.parse_args()
 
-    payload = definition(model=args.model)
+    payload = definition()
 
     if args.dry_run:
         print(json.dumps(payload, indent=2))
