@@ -41,6 +41,11 @@ from pydantic import BaseModel, Field, field_validator
 MIN_CANDIDATES = 5
 MAX_CANDIDATES = 10
 
+#: How many previously-suggested titles are briefed for cross-run dedup (#49).
+#: An unbounded history eventually dominates the prompt, and the oldest ideas
+#: are the least useful to avoid repeating.
+MAX_PREVIOUSLY_SUGGESTED = 50
+
 # The founder's complexity preference, as rendered on the UI slider.
 MIN_COMPLEXITY = 1
 MAX_COMPLEXITY = 5
@@ -353,7 +358,14 @@ You are Idea Scout's synthesis analyst. You are given a founder's profile, the
 kind of thing they want to build, their complexity preference, and the findings
 of three independent researchers (community signal, market narrative, and
 competitive gaps). You may also be given the founder's stated preferences about
-the shape of business they want.
+the shape of business they want, and a `previously_suggested` list of idea
+titles this founder has already been shown on earlier runs.
+
+Treat `previously_suggested` as ground already covered. Do not re-propose those
+ideas, and do not rename one to slip it past — a founder who runs this twice is
+asking what they have *not* already seen. If the research genuinely points back
+at something on that list, say so explicitly in the pitch and explain what has
+changed, rather than presenting it as new.
 
 Turn that into {MIN_CANDIDATES}–{MAX_CANDIDATES} concrete startup ideas, ranked
 best first. Be a candid co-founder, not a cheerleader: name the biggest risk in

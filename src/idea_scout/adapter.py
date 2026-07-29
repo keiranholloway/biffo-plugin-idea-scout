@@ -312,6 +312,13 @@ class CoreHttpGateway:
                 },
             )
 
+    async def list_owner_candidates(self, *, owner_sub: str) -> list[Candidate]:
+        # No params, same as list_runs: Core's owner-data list route scopes to
+        # the caller via the forwarded token, so this cannot reach another
+        # founder's candidates even though it spans runs.
+        rows = await self._t.request("GET", _CANDIDATES)
+        return [_candidate_from_row(row) for row in rows]
+
     async def list_candidates(self, *, owner_sub: str, run_id: str) -> list[Candidate]:
         rows = await self._t.request("GET", _CANDIDATES, params={"run_id": run_id})
         return sorted(

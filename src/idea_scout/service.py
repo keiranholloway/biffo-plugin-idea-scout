@@ -37,6 +37,7 @@ from .definitions import (
     FINDINGS_TOOL_NAME,
     MAX_CANDIDATES,
     MAX_COMPLEXITY,
+    MAX_PREVIOUSLY_SUGGESTED,
     MIN_COMPLEXITY,
     PREFERENCE_KEYS,
     RESEARCH_AGENT_NAMES,
@@ -214,11 +215,13 @@ class IdeaScoutService:
             raise UnknownBuildTypeError(build_type)
 
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
+        previously_suggested = await self._previously_suggested(owner_sub=owner_sub)
         brief = self._build_brief(
             profile=profile,
             build_type=chosen,
             complexity=complexity,
             preferences=chosen_preferences,
+            previously_suggested=previously_suggested,
         )
 
         # One chain for all three, generated here because the run row does not
@@ -406,6 +409,40 @@ class IdeaScoutService:
             return config["system_prompt"], config["model"]
         return DEFAULT_INSTRUCTIONS[role], fallback_model
 
+    async def _previously_suggested(self, *, owner_sub: str) -> list[str]:
+        """Titles this founder has already been shown, newest first (#49).
+
+        Ordered by the *run's* timestamp rather than the candidate's: a run's
+        candidates are all written together, so the run is the unit that has a
+        meaningful recency, and it is the field both the real route and the
+        fake actually carry.
+
+        Deduplicated case-insensitively — the same idea surfacing twice under
+        the same words should occupy one slot of the budget, not two — and
+        capped, because an unbounded history eventually crowds out the brief it
+        is attached to.
+        """
+        runs = await self._core.list_runs(owner_sub=owner_sub)
+        recency = {r.id: (r.created_at or "") for r in runs}
+        candidates = await self._core.list_owner_candidates(owner_sub=owner_sub)
+        ordered = sorted(
+            candidates,
+            key=lambda c: (recency.get(c.run_id, ""), -c.rank),
+            reverse=True,
+        )
+
+        seen: set[str] = set()
+        titles: list[str] = []
+        for candidate in ordered:
+            key = candidate.title.strip().casefold()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            titles.append(candidate.title)
+            if len(titles) == MAX_PREVIOUSLY_SUGGESTED:
+                break
+        return titles
+
     @staticmethod
     def _build_brief(
         *,
@@ -413,6 +450,7 @@ class IdeaScoutService:
         build_type: BuildType,
         complexity: int,
         preferences: list[str],
+        previously_suggested: list[str] | None = None,
     ) -> dict[str, Any]:
         """What the agents are told about who this run is for.
 
@@ -437,6 +475,12 @@ class IdeaScoutService:
         # preference set that does not exist.
         if preferences:
             brief["preferences"] = preference_brief(preferences)
+        # Omitted when the founder has no history, for the same reason as an
+        # empty profile: an empty list invites the model to reason about a set
+        # that does not exist. Present, it means "you have already offered
+        # these — find different ground" (#49).
+        if previously_suggested:
+            brief["previously_suggested"] = list(previously_suggested)
         return brief
 
 

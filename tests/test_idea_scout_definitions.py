@@ -205,3 +205,13 @@ def test_out_of_range_complexity_falls_back_rather_than_raising():
     """A bad value is the app layer's job to reject; briefing an agent with a
     KeyError traceback helps nobody."""
     assert d.complexity_label(99) == d.COMPLEXITY_LABELS[3]
+
+
+def test_the_synthesis_prompt_names_the_dedup_key_the_brief_actually_sends():
+    """A key in the payload the prompt never mentions is invisible to the model,
+    and a prompt naming a key the brief never sends is a lie. #26 was exactly
+    that disagreement — the prompt claimed a founder profile it was not being
+    given — so the pair is asserted rather than assumed: `_build_brief` writes
+    `previously_suggested`, and synthesis has to be told what it means (#49).
+    """
+    assert "previously_suggested" in d.SYNTHESIS_INSTRUCTIONS

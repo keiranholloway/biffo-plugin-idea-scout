@@ -32,6 +32,7 @@ import pytest
 from fakes import FakeCoreGateway
 
 from idea_scout.definitions import RESEARCH_AGENT_NAMES
+from idea_scout.models import Candidate, ScoutRun
 from idea_scout.service import IdeaScoutService
 
 OWNER = "founder-sub-abc"
@@ -90,6 +91,39 @@ async def test_the_founder_fit_data_survives_the_fan_ins_intersection():
     assert "profile" in brief, brief
     assert "build_type" in brief, brief
     assert "complexity" in brief, brief
+
+
+@pytest.mark.asyncio
+async def test_the_dedup_history_survives_the_fan_ins_intersection():
+    """`previously_suggested` is only useful if synthesis actually receives it.
+
+    Synthesis is what writes candidates, and it sees only the keys every
+    research brief shares (#26). A dedup list added to one brief and not the
+    others would vanish at the join, silently — the run would still produce
+    plausible candidates, they would just repeat the ones the founder had
+    already seen, which is the exact defect #49 exists to fix.
+    """
+    core = FakeCoreGateway()
+    core.runs["past"] = ScoutRun(
+        id="past",
+        owner_sub=OWNER,
+        build_type="micro-saas",
+        complexity=3,
+        chain_id="chain-past",
+        status="complete",
+        created_at="2026-07-01T00:00:00Z",
+    )
+    core.candidates.append(
+        Candidate(id="c1", run_id="past", rank=1, title="Already offered", pitch="p")
+    )
+
+    shared = _shared_input(await _research_payloads(core))
+
+    brief = shared.get("brief")
+    assert brief is not None, f"the brief did not survive; shared keys: {list(shared)}"
+    assert "Already offered" in brief.get("previously_suggested", []), (
+        "the dedup history did not reach synthesis through the intersection"
+    )
 
 
 @pytest.mark.asyncio
