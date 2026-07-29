@@ -1,17 +1,24 @@
-// Admin API client for Idea Scout's build-type categories.
+// Admin API client for Idea Scout's admin panel: build types, agents, and model catalog.
 //
-// One base, and it is **Core's**, not this plugin's admin app. The five CRUD
-// routes for `idea_scout_build_types` are declared in `biffo.plugin.json`'s
-// `api_routes`, so Core generates them and the plugin host forwards them
-// (biffo-template#684), authorised by the table's own permissions:
-// list/read open to any authenticated caller (the founder's run form needs the
-// list), create/update/delete admin-only.
+// Two bases, and both are **Core's**, not this plugin's admin app:
+//
+// - BUILD_TYPES_BASE and MODEL_CATALOG_BASE: The CRUD routes for these tables
+//   are declared in `biffo.plugin.json`'s `api_routes`, so Core generates them
+//   and the plugin host forwards them (biffo-template#684), authorised by the
+//   table's own permissions: list/read open to any authenticated caller, create/
+//   update/delete admin-only.
+//
+// - AGENTS_BASE: Chat agents are routed through Core's admin route system at
+//   `/api/v1/admin/plugins/idea-scout/chat-agents`. These are the admin-editable
+//   prompts and models for the four agent roles (three research + one synthesis).
 //
 // Calling them through this plugin's admin app instead would make the host call
 // itself and then forward on to Core — three hops, and a 500 when they outrun
 // the client's timeout. Ideation hit exactly that (biffo-template#652) and its
 // api.ts carries the same warning.
-const BASE = '/api/v1/plugins/idea-scout'
+const BUILD_TYPES_BASE = '/api/v1/plugins/idea-scout'
+const AGENTS_BASE = '/api/v1/admin/plugins/idea-scout'
+const MODEL_CATALOG_BASE = '/api/v1/plugins/idea-scout'
 
 export class ApiError extends Error {
   constructor(
@@ -35,14 +42,37 @@ export interface BuildType {
 /** The fields an admin may set. `id` is Core's; `key` is immutable after create. */
 export type BuildTypeDraft = Omit<BuildType, 'id'>
 
+export interface ChatAgent {
+  agent_key: string
+  agent_name: string
+  role: string
+  system_prompt: string
+  model: string
+  required_group: string
+  active: boolean
+  max_history_messages: number
+  max_output_tokens: number
+  timeout_seconds: number
+}
+
+export interface ModelCatalogEntry {
+  id: string
+  model_id: string
+  label: string
+  active: boolean | null
+  is_default: boolean | null
+  web_capable: boolean | null
+}
+
 async function request<T>(
   token: () => string | null,
   method: string,
   path: string,
   body?: unknown,
+  base: string = BUILD_TYPES_BASE,
 ): Promise<T> {
   const idToken = token()
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${base}${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -63,11 +93,32 @@ async function request<T>(
 
 export function createApi(token: () => string | null) {
   return {
-    list: () => request<BuildType[]>(token, 'GET', '/build-types'),
-    create: (draft: BuildTypeDraft) => request<BuildType>(token, 'POST', '/build-types', draft),
+    // Build types
+    list: () => request<BuildType[]>(token, 'GET', '/build-types', undefined, BUILD_TYPES_BASE),
+    create: (draft: BuildTypeDraft) =>
+      request<BuildType>(token, 'POST', '/build-types', draft, BUILD_TYPES_BASE),
     update: (id: string, draft: BuildTypeDraft) =>
-      request<BuildType>(token, 'PUT', `/build-types/${id}`, draft),
-    remove: (id: string) => request<void>(token, 'DELETE', `/build-types/${id}`),
+      request<BuildType>(token, 'PUT', `/build-types/${id}`, draft, BUILD_TYPES_BASE),
+    remove: (id: string) => request<void>(token, 'DELETE', `/build-types/${id}`, undefined, BUILD_TYPES_BASE),
+
+    // Chat agents
+    listChatAgents: () => request<ChatAgent[]>(token, 'GET', '/chat-agents', undefined, AGENTS_BASE),
+    createChatAgent: (agent: Omit<ChatAgent, 'agent_key'>) =>
+      request<ChatAgent>(token, 'POST', '/chat-agents', agent, AGENTS_BASE),
+    updateChatAgent: (agentKey: string, updates: Partial<ChatAgent>) =>
+      request<ChatAgent>(token, 'PUT', `/chat-agents/${agentKey}`, updates, AGENTS_BASE),
+    deleteChatAgent: (agentKey: string) =>
+      request<void>(token, 'DELETE', `/chat-agents/${agentKey}`, undefined, AGENTS_BASE),
+
+    // Model catalog
+    listModelCatalog: () =>
+      request<ModelCatalogEntry[]>(token, 'GET', '/idea_scout_model_catalog', undefined, MODEL_CATALOG_BASE),
+    createModelCatalogEntry: (entry: Omit<ModelCatalogEntry, 'id'>) =>
+      request<ModelCatalogEntry>(token, 'POST', '/idea_scout_model_catalog', entry, MODEL_CATALOG_BASE),
+    updateModelCatalogEntry: (entryId: string, updates: Partial<ModelCatalogEntry>) =>
+      request<ModelCatalogEntry>(token, 'PUT', `/idea_scout_model_catalog/${entryId}`, updates, MODEL_CATALOG_BASE),
+    deleteModelCatalogEntry: (entryId: string) =>
+      request<void>(token, 'DELETE', `/idea_scout_model_catalog/${entryId}`, undefined, MODEL_CATALOG_BASE),
   }
 }
 
