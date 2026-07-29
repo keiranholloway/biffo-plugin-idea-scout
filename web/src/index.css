@@ -366,6 +366,11 @@ input[type="text"] {
   color: var(--text-muted);
 }
 
+.run-model {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
 .in-flight {
   background: var(--brand-soft);
   border: 1px solid #dfe3ff;

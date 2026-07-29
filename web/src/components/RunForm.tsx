@@ -1,26 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type { BuildType, ComplexityLevel, Preference } from '../lib/api'
+import type { BuildType, ComplexityLevel, ModelOption, Preference } from '../lib/api'
 
 /** The run setup: what to look for, and how ambitious.
  *
  * Both lists come from the API rather than being hardcoded here. Build types are
  * admin-managed, and the complexity wording is served so that the words a founder
  * reads on the slider are the words the research agents are briefed with — two
- * copies would drift and this one would be the wrong one.
+ * copies would drift and this one would be the wrong one. Models are admin-curated;
+ * the founder picks which to run agents on.
  */
 export function RunForm({
   buildTypes,
   complexityLevels,
   preferences,
+  models,
+  selectedModel,
   busy,
   onStart,
 }: {
   buildTypes: BuildType[]
   complexityLevels: ComplexityLevel[]
   preferences: Preference[]
+  models: ModelOption[]
+  selectedModel: string | null
   busy: boolean
-  onStart: (buildType: string, complexity: number, preferences: string[]) => void
+  onStart: (buildType: string, complexity: number, preferences: string[], research_model?: string) => void
 }) {
   const [buildType, setBuildType] = useState<string>('')
   const [complexity, setComplexity] = useState<number>(3)
@@ -28,6 +33,19 @@ export function RunForm({
   // result from an input the founder never made — the invisible-input failure
   // this plugin has already had twice (#26, #29).
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set())
+  const [modelId, setModelId] = useState<string>('')
+
+  // Initialize or update the selected model: last-used, then default, then empty
+  useEffect(() => {
+    const defaultModel = findDefaultModel(models)
+    if (selectedModel) {
+      setModelId(selectedModel)
+    } else if (defaultModel) {
+      setModelId(defaultModel.id)
+    } else {
+      setModelId('')
+    }
+  }, [selectedModel, models])
 
   const selected = buildTypes.find((t) => t.key === buildType)
   const level = complexityLevels.find((l) => l.value === complexity)
@@ -51,7 +69,14 @@ export function RunForm({
       className="run-form"
       onSubmit={(event) => {
         event.preventDefault()
-        if (buildType !== '') onStart(buildType, complexity, [...chosen])
+        if (buildType !== '') {
+          // Only include research_model if it's actually selected (not empty string)
+          if (modelId) {
+            onStart(buildType, complexity, [...chosen], modelId)
+          } else {
+            onStart(buildType, complexity, [...chosen])
+          }
+        }
       }}
     >
       <label className="field">
@@ -92,6 +117,23 @@ export function RunForm({
           {level?.label ?? ''}
         </span>
       </label>
+
+      {models.length > 0 && (
+        <label className="field">
+          <span className="field-label">Which model to run on?</span>
+          <select
+            value={modelId}
+            onChange={(event) => setModelId(event.target.value)}
+            disabled={busy}
+          >
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {preferences.length > 0 && (
         <fieldset className="preferences" disabled={busy}>
@@ -140,4 +182,8 @@ export function RunForm({
       </p>
     </form>
   )
+}
+
+function findDefaultModel(models: ModelOption[]): ModelOption | null {
+  return models.find((m) => m.is_default) ?? null
 }
