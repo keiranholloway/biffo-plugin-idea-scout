@@ -64,6 +64,19 @@ export interface ModelCatalogEntry {
   web_capable: boolean | null
 }
 
+/**
+ * Agent role constants. The synthesis agent's prompt and model are read from the
+ * orchestration workflow, not from this plugin's stored config, so edits to the
+ * synthesis row will save but will not change what runs. The three research
+ * agents are genuinely live-editable via _resolve_agent.
+ */
+export const SYNTHESIS_AGENT_NAME = 'idea-scout-synthesis'
+export const RESEARCH_AGENT_NAMES = [
+  'idea-scout-community',
+  'idea-scout-narrative',
+  'idea-scout-competitive',
+]
+
 async function request<T>(
   token: () => string | null,
   method: string,

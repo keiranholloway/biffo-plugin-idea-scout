@@ -248,6 +248,40 @@ describe('Idea Scout admin panel', () => {
         expect(call[1].system_prompt).toBe('Updated prompt content')
       })
     })
+
+    it('shows a warning on the synthesis agent that it is not live-editable', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+
+      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      await user.click(agentsTab)
+
+      await waitFor(() => {
+        // Check that the synthesis agent has a warning
+        const warnings = screen.getAllByText(/Not live-editable/i)
+        expect(warnings.length).toBeGreaterThan(0)
+      })
+    })
+
+    it('does not show a warning on research agents', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+
+      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      await user.click(agentsTab)
+
+      await waitFor(() => {
+        // Get the research agent rows by looking for the research prompt text
+        const researchPromptElement = screen.getByText('Research communities...')
+        const agentRow = researchPromptElement.closest('.admin-list-item')
+
+        // The warning should not appear in the research agent row
+        if (agentRow) {
+          const warningInRow = agentRow.querySelector('.admin-synthesis-warning')
+          expect(warningInRow).toBeFalsy()
+        }
+      })
+    })
   })
 
   describe('Models tab', () => {

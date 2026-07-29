@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { ChatAgent } from '../lib/api'
+import { SYNTHESIS_AGENT_NAME } from '../lib/api'
 
 interface AgentListProps {
   agents: ChatAgent[]
@@ -29,6 +30,10 @@ export function AgentList({ agents, onUpdate, onDelete, busy }: AgentListProps) 
     setEditForm({})
   }
 
+  function isSynthesisAgent(agent: ChatAgent): boolean {
+    return agent.agent_key === SYNTHESIS_AGENT_NAME
+  }
+
   if (agents.length === 0) {
     return <p className="admin-empty">No agents configured.</p>
   }
@@ -39,6 +44,14 @@ export function AgentList({ agents, onUpdate, onDelete, busy }: AgentListProps) 
         editingKey === agent.agent_key ? (
           <div key={agent.agent_key} className="admin-list-item">
             <div className="admin-edit-form">
+              {isSynthesisAgent(agent) && (
+                <div className="admin-synthesis-warning">
+                  <strong>⚠ Not live-editable:</strong> This agent&apos;s prompt and model are read
+                  from the orchestration workflow, not from this row. Editing here will save but will
+                  not change what runs. The workflow definition is the live copy.
+                </div>
+              )}
+
               <label>
                 Name:
                 <input
@@ -103,6 +116,13 @@ export function AgentList({ agents, onUpdate, onDelete, busy }: AgentListProps) 
           <div key={agent.agent_key} className="admin-list-item">
             <div className="admin-list-content">
               <h3>{agent.agent_name}</h3>
+              {isSynthesisAgent(agent) && (
+                <div className="admin-synthesis-warning">
+                  <strong>⚠ Not live-editable:</strong> This agent&apos;s prompt and model are read
+                  from the orchestration workflow, not from this row. Editing here will save but will
+                  not change what runs. The workflow definition is the live copy.
+                </div>
+              )}
               <p>
                 <strong>Role:</strong> {agent.role}
               </p>
