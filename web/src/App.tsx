@@ -168,7 +168,15 @@ export default function App() {
     <div className="layout">
       <aside className="sidebar">
         <h2>Past scouts</h2>
-        {runs.length === 0 && <p className="muted">No scouts yet.</p>}
+        {/* `loaded` gates this the same way it gates the main pane: until the
+            list has answered, "No scouts yet." is a claim the app cannot make.
+            It told a founder with eleven scouts they had none (#53). */}
+        {runs.length === 0 && !loaded && (
+          <p className="muted">Loading your scouts…</p>
+        )}
+        {runs.length === 0 && loaded && (
+          <p className="muted">No scouts yet.</p>
+        )}
         <ul>
           {runs.map((run) => {
             const started = startedAt(run.created_at);
