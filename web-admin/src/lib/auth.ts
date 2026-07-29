@@ -4,6 +4,7 @@ import {
   type ICognitoUserPoolData,
 } from 'amazon-cognito-identity-js'
 
+import { pruneForeignCognitoCredentials } from './cognito-hygiene'
 import { resolveCoreIdentity } from './identity'
 
 // SHARED-SESSION INVARIANT (ADR-0007), mirroring the sibling skeleton's auth.ts.
@@ -25,6 +26,11 @@ async function getUserPool(): Promise<CognitoUserPool | null> {
   if (userPool) return userPool
   const identity = await resolveCoreIdentity()
   if (!identity) return null
+  // Once per page load, and only with a resolved client id: drop credentials
+  // left behind by pools this deployment no longer uses (biffo-template#834).
+  // The portal and the sibling skeleton do the same; this origin is shared, so
+  // whichever app loads first does the cleaning.
+  pruneForeignCognitoCredentials(identity.clientId)
   const poolData: ICognitoUserPoolData = {
     UserPoolId: identity.userPoolId,
     ClientId: identity.clientId,
