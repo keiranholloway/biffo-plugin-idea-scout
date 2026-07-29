@@ -41,15 +41,10 @@ from pydantic import BaseModel, Field, field_validator
 MIN_CANDIDATES = 5
 MAX_CANDIDATES = 10
 
-#: How many previously-suggested ideas are briefed for cross-run dedup (#49).
-#:
-#: Each entry is a title *and* its pitch. Titles alone did not work: measured on
-#: dev, 3 of 4 candidates were near-duplicates while no title repeated verbatim,
-#: because a title names an idea without describing it and is trivially avoided
-#: by renaming. A pitch is ~160 tokens, so 15 pairs cost ~2.6k against a
-#: synthesis prompt already carrying three researchers' findings — where 50
-#: pairs would be ~8.7k and start crowding out the research it exists to weigh.
-MAX_PREVIOUSLY_SUGGESTED = 15
+#: How many previously-suggested titles are briefed for cross-run dedup (#49).
+#: An unbounded history eventually dominates the prompt, and the oldest ideas
+#: are the least useful to avoid repeating.
+MAX_PREVIOUSLY_SUGGESTED = 50
 
 # The founder's complexity preference, as rendered on the UI slider.
 MIN_COMPLEXITY = 1
@@ -366,19 +361,11 @@ competitive gaps). You may also be given the founder's stated preferences about
 the shape of business they want, and a `previously_suggested` list of idea
 titles this founder has already been shown on earlier runs.
 
-Each `previously_suggested` entry has a `title` and the `pitch` that was shown
-with it. Read the pitches, not the titles: what must not repeat is the *idea*,
-not the name. Renaming "Cost Optimiser" to "Spend Watchdog" is a repeat. So is
-proposing the same job for the same buyer with a different label on it.
-
-Before you rank, check each candidate against that list and ask "is this the
-same thing a founder already read?" If yes, drop it and use the research to find
-different ground. If the research genuinely points back at one of them, say so
-explicitly in the pitch and explain what has changed — do not present it as new.
-
-Producing fewer ideas is better than padding the list with restatements, but if
-avoiding repeats would take you below the minimum, prefer a genuinely new idea
-you rank low over a repeat you rank high.
+Treat `previously_suggested` as ground already covered. Do not re-propose those
+ideas, and do not rename one to slip it past — a founder who runs this twice is
+asking what they have *not* already seen. If the research genuinely points back
+at something on that list, say so explicitly in the pitch and explain what has
+changed, rather than presenting it as new.
 
 Turn that into {MIN_CANDIDATES}–{MAX_CANDIDATES} concrete startup ideas, ranked
 best first. Be a candid co-founder, not a cheerleader: name the biggest risk in
