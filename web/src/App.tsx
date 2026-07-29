@@ -8,6 +8,7 @@ import {
   type BuildType,
   type Candidate,
   type ComplexityLevel,
+  type ModelOption,
   type Preference,
   type RunState,
 } from "./lib/api";
@@ -31,6 +32,8 @@ export default function App() {
   const [complexityLevels, setComplexityLevels] = useState<ComplexityLevel[]>(
     [],
   );
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunState[]>([]);
   const [current, setCurrent] = useState<RunState | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -64,12 +67,16 @@ export default function App() {
       api.current.getBuildTypes(),
       api.current.getComplexityLevels(),
       api.current.getPreferences(),
+      api.current.getModels(),
+      api.current.getLastUsedModel(),
       api.current.listRuns(),
     ])
-      .then(([types, levels, prefs, existing]) => {
+      .then(([types, levels, prefs, modelList, lastUsed, existing]) => {
         setBuildTypes(types);
         setComplexityLevels(levels);
         setPreferences(prefs);
+        setModels(modelList);
+        setSelectedModel(lastUsed);
         setRuns(existing);
         setLoaded(true);
       })
@@ -127,11 +134,12 @@ export default function App() {
     buildType: string,
     complexity: number,
     prefs: string[] = [],
+    research_model?: string,
   ) {
     setStarting(true);
     setError(null);
     try {
-      const run = await api.current.startRun(buildType, complexity, prefs);
+      const run = await api.current.startRun(buildType, complexity, prefs, research_model);
       setCurrent(run);
       setCandidates([]);
       setRuns(await api.current.listRuns());
@@ -231,9 +239,11 @@ export default function App() {
             buildTypes={buildTypes}
             complexityLevels={complexityLevels}
             preferences={preferences}
+            models={models}
+            selectedModel={selectedModel}
             busy={starting}
-            onStart={(type, complexity, prefs) =>
-              void startRun(type, complexity, prefs)
+            onStart={(type, complexity, prefs, model) =>
+              void startRun(type, complexity, prefs, model)
             }
           />
         ) : current == null ? null : (
@@ -243,6 +253,11 @@ export default function App() {
                 {typeLabel(buildTypes, current.build_type)}
               </span>
               <span className="run-complexity">{current.complexity_label}</span>
+              {current.research_model != null && (
+                <span className="run-model">
+                  {modelLabel(models, current.research_model)}
+                </span>
+              )}
               <button type="button" onClick={() => setCurrent(null)}>
                 New scout
               </button>
@@ -283,6 +298,16 @@ export default function App() {
  */
 function typeLabel(buildTypes: BuildType[], key: string): string {
   return buildTypes.find((type) => type.key === key)?.label ?? key;
+}
+
+/** The model's human label, falling back to its id.
+ *
+ * Runs store the model `id`; only the models list knows its label. The fallback
+ * matters: a run started against a model an admin has since removed still has to
+ * render as something.
+ */
+function modelLabel(models: ModelOption[], id: string): string {
+  return models.find((model) => model.id === id)?.label ?? id;
 }
 
 function statusLabel(run: RunState): string {

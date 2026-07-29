@@ -33,6 +33,8 @@ describe("RunForm", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -48,12 +50,14 @@ describe("RunForm", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={onStart}
       />,
     );
 
-    await userEvent.selectOptions(screen.getByRole("combobox"), "mobile-app");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "mobile-app");
     await userEvent.click(screen.getByRole("button", { name: "Run now" }));
 
     // The third argument is the preference selection — empty here because
@@ -67,12 +71,14 @@ describe("RunForm", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
     );
 
-    await userEvent.selectOptions(screen.getByRole("combobox"), "micro-saas");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "micro-saas");
 
     expect(screen.getByText("One narrow job.")).toBeInTheDocument();
   });
@@ -85,6 +91,8 @@ describe("RunForm", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -101,6 +109,8 @@ describe("RunForm", () => {
         buildTypes={[]}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -122,6 +132,8 @@ describe("RunForm", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -136,6 +148,8 @@ describe("RunForm", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy
         onStart={vi.fn()}
       />,
@@ -152,6 +166,8 @@ describe("weight preferences (#34)", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -169,12 +185,14 @@ describe("weight preferences (#34)", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={onStart}
       />,
     );
 
-    await user.selectOptions(screen.getByRole("combobox"), "mobile-app");
+    await user.selectOptions(screen.getByRole("combobox", { name: /build/i }), "mobile-app");
     await user.click(screen.getByLabelText("Recurring revenue"));
     await user.click(screen.getByRole("button", { name: "Run now" }));
 
@@ -189,6 +207,8 @@ describe("weight preferences (#34)", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -208,6 +228,8 @@ describe("weight preferences (#34)", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -223,6 +245,8 @@ describe("weight preferences (#34)", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={[]}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -242,11 +266,135 @@ describe("the promise made to a founder about waiting (#27)", () => {
         buildTypes={BUILD_TYPES}
         complexityLevels={LEVELS}
         preferences={PREFS}
+        models={[]}
+        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
     );
     expect(screen.getByText(/two to four minutes/i)).toBeTruthy();
     expect(screen.getByText(/will not sit there indefinitely/i)).toBeTruthy();
+  });
+});
+
+describe("Model picker (M3)", () => {
+  const MODELS = [
+    { id: "m1", model_id: "anthropic/claude-sonnet-4:online", label: "Sonnet", is_default: false },
+    { id: "m2", model_id: "anthropic/claude-opus-4:online", label: "Opus", is_default: true },
+  ];
+
+  it("offers exactly what GET /models returned", () => {
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={MODELS}
+        selectedModel={null}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
+    const options = Array.from(select.options).map((opt) => opt.textContent);
+    expect(options).toContain("Sonnet");
+    expect(options).toContain("Opus");
+    expect(options).toHaveLength(2);
+  });
+
+  it("pre-selects the last-used model when there is one", () => {
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={MODELS}
+        selectedModel="m1"
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
+    expect(select.value).toBe("m1");
+  });
+
+  it("falls back to is_default when last-used is null", () => {
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={MODELS}
+        selectedModel={null}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
+    expect(select.value).toBe("m2");
+  });
+
+  it("does not render an empty dropdown or break when model list is empty", () => {
+    const onStart = vi.fn();
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={onStart}
+      />,
+    );
+
+    // Form should still work
+    expect(screen.getByRole("button", { name: "Run now" })).not.toBeNull();
+    expect(screen.queryByText(/model/i)).toBeNull();
+  });
+
+  it("includes model selection in run start, or omits it if no selection", async () => {
+    const onStart = vi.fn();
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={MODELS}
+        selectedModel="m1"
+        busy={false}
+        onStart={onStart}
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "mobile-app");
+    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
+
+    // With a model selected, should pass it
+    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], "m1");
+  });
+
+  it("omits research_model rather than sending empty string", async () => {
+    const onStart = vi.fn();
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={onStart}
+      />,
+    );
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "mobile-app");
+    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
+
+    // Without a model available/selected, should not include research_model param
+    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, []);
   });
 });
