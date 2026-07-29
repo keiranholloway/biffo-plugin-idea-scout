@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 from fakes import FakeCoreGateway
 
-from idea_scout.definitions import RESEARCH_AGENT_NAMES
+from idea_scout.definitions import RESEARCH_AGENT_NAMES, seed_config_payloads
 from idea_scout.models import Candidate, ScoutRun
 from idea_scout.service import IdeaScoutService
 
@@ -40,6 +40,18 @@ OWNER = "founder-sub-abc"
 
 def _service(core: FakeCoreGateway) -> IdeaScoutService:
     return IdeaScoutService(core, research_model="research-m", synthesis_model="synthesis-m")
+
+
+def _seed_core(core: FakeCoreGateway) -> None:
+    """Seed the gateway with agent config payloads, insert-if-absent."""
+    payload = seed_config_payloads(research_model="research-m", synthesis_model="synthesis-m")
+    for row in payload:
+        role = row["role"]
+        if role not in core.configs:
+            core.configs[role] = {
+                "system_prompt": row["system_prompt"],
+                "model": row["model"],
+            }
 
 
 def _shared_input(payloads: list[dict[str, Any]]) -> dict[str, Any]:
@@ -68,6 +80,7 @@ def _shared_input(payloads: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 async def _research_payloads(core: FakeCoreGateway, *, complexity: int = 3) -> list[dict[str, Any]]:
+    _seed_core(core)
     await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=complexity)
     research = [r for r in core.requested if r["agent_name"] in RESEARCH_AGENT_NAMES]
     assert len(research) == len(RESEARCH_AGENT_NAMES), research

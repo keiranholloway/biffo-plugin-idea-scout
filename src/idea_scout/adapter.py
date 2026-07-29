@@ -206,6 +206,15 @@ class CoreHttpGateway:
             return None
         return {"system_prompt": row["system_prompt"], "model": row["model"]}
 
+    async def seed_own_config(self, *, config: list[dict[str, Any]]) -> list[dict[str, bool]]:
+        """Seed all roles at once, insert-if-absent. Returns created/skipped status per role."""
+        rows = await self._t.request(
+            "POST",
+            f"{_PLUGIN_CONFIG}/seed",
+            json=config,  # type: ignore[arg-type]
+        )
+        return rows
+
     # ── Runs ─────────────────────────────────────────────────────────────────
 
     async def create_run(

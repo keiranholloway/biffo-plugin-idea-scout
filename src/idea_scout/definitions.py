@@ -405,9 +405,11 @@ Return your answer by calling the `{CANDIDATES_TOOL_NAME}` tool exactly once
 with the full ranked list. Do not answer in prose.
 """
 
-#: The built-in prompt for each agent role, used when an admin has not configured
-#: one in Core's plugin config (the same fallback the Ideation Engine's finalise
-#: does). Keyed by agent name, which is also the config role.
+#: The built-in prompt for each agent role — **seed data only, never a runtime
+#: fallback**. These prompts are seeded into Core's plugin config on every cold
+#: start via ``seed_config_payloads()``, guaranteeing a row exists for each role.
+#: An admin's edits to the stored row then take effect immediately. Keyed by agent
+#: name, which is also the config role.
 DEFAULT_INSTRUCTIONS: dict[str, str] = {
     COMMUNITY_AGENT_NAME: COMMUNITY_INSTRUCTIONS,
     NARRATIVE_AGENT_NAME: NARRATIVE_INSTRUCTIONS,
@@ -507,3 +509,43 @@ def complexity_label(complexity: int) -> str:
     """Render the slider position as the words the agents are briefed with — a
     bare "3 out of 5" means nothing to a model without the scale."""
     return COMPLEXITY_LABELS.get(complexity, COMPLEXITY_LABELS[3])
+
+
+def seed_config_payloads(
+    *,
+    research_model: str = DEFAULT_RESEARCH_MODEL,
+    synthesis_model: str = DEFAULT_SYNTHESIS_MODEL,
+) -> list[dict[str, Any]]:
+    """Build the seed payloads for all four agent roles.
+
+    Keyed on agent name, each carries the built-in prompt verbatim so seeding
+    (turning configuration on) changes nothing observable. The single source of
+    truth for all seed paths: app.py startup, admin_app.py startup, and the
+    manual ``seed_agent_config.py`` script all use this, so they cannot drift.
+
+    ``research_model`` and ``synthesis_model`` default to the built-in constants,
+    but both can be overridden by environment variable in the startup path."""
+    rows = [
+        {
+            "agent_key": name,
+            "agent_name": name,
+            "role": name,
+            "system_prompt": DEFAULT_INSTRUCTIONS[name],
+            "model": research_model,
+            "required_group": "founder",
+            "active": True,
+        }
+        for name in RESEARCH_AGENT_NAMES
+    ]
+    rows.append(
+        {
+            "agent_key": SYNTHESIS_AGENT_NAME,
+            "agent_name": SYNTHESIS_AGENT_NAME,
+            "role": SYNTHESIS_AGENT_NAME,
+            "system_prompt": DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME],
+            "model": synthesis_model,
+            "required_group": "founder",
+            "active": True,
+        }
+    )
+    return rows

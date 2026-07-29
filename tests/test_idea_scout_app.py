@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 
 from idea_scout import models as m
 from idea_scout.app import app, get_service, require_founder
+from idea_scout.definitions import seed_config_payloads
 from idea_scout.models import BuildType, UserProfile
 from idea_scout.service import IdeaScoutService
 
@@ -27,7 +28,7 @@ OWNER = "founder-sub-abc"
 
 @pytest.fixture
 def core() -> FakeCoreGateway:
-    return FakeCoreGateway(
+    gateway = FakeCoreGateway(
         profile=UserProfile(headline="Fractional CTO"),
         build_types=[
             BuildType(
@@ -41,6 +42,16 @@ def core() -> FakeCoreGateway:
             BuildType(id="bt2", key="retired", label="Retired", active=False),
         ],
     )
+    # Seed the gateway with agent config, matching what the startup handler does
+    payload = seed_config_payloads(research_model="research/m", synthesis_model="synthesis/m")
+    for row in payload:
+        role = row["role"]
+        if role not in gateway.configs:
+            gateway.configs[role] = {
+                "system_prompt": row["system_prompt"],
+                "model": row["model"],
+            }
+    return gateway
 
 
 @pytest.fixture

@@ -33,7 +33,6 @@ from pydantic import ValidationError
 
 from .definitions import (
     CANDIDATES_TOOL_NAME,
-    DEFAULT_INSTRUCTIONS,
     FINDINGS_TOOL_NAME,
     MAX_CANDIDATES,
     MAX_COMPLEXITY,
@@ -112,6 +111,23 @@ class MalformedCandidatesError(IdeaScoutError):
     502 tells them nothing they can act on, whereas a ``failed`` run carries a
     reason and stays in their sidebar.
     """
+
+
+class AgentConfigMissingError(IdeaScoutError):
+    """An agent role has no configured row and seeding has not run.
+
+    The plugin guarantees rows exist at startup via seeding; a missing row at
+    runtime means startup seeding failed or was skipped, and the fallback is
+    deliberately removed so the operator knows immediately.
+    """
+
+    def __init__(self, role: str) -> None:
+        self.role = role
+        super().__init__(
+            f"Agent role '{role}' has no configured row. "
+            "Seeding may not have run at startup, or Core was unavailable. "
+            "Check the app logs and restart the plugin."
+        )
 
 
 def extract_findings(run_messages: list[dict[str, Any]]) -> FindingSet | None:
@@ -437,19 +453,20 @@ class IdeaScoutService:
     async def _resolve_agent(
         self, role: str, fallback_model: str, chosen_model_slug: str | None = None
     ) -> tuple[str, str]:
-        """The live, admin-editable prompt and model for an agent role, falling
-        back to the built-in default when an admin has never configured one.
+        """The live, admin-editable prompt and model for an agent role.
+
+        Rows are guaranteed to exist at startup via seeding, so a missing row
+        raises loudly rather than silently falling back to built-in defaults.
 
         For research agents only, the founder's chosen_model_slug (already
-        resolved to the actual model id) overrides the model returned from
-        admin config or built-in fallback. Synthesis always uses admin config
-        or built-in, never the founder's choice.
+        resolved to the actual model id) overrides the stored model. Synthesis
+        always uses the stored model, never the founder's choice.
         """
         config = await self._core.get_own_config(role=role)
-        if config:
-            instructions, model = config["system_prompt"], config["model"]
-        else:
-            instructions, model = DEFAULT_INSTRUCTIONS[role], fallback_model
+        if config is None:
+            raise AgentConfigMissingError(role)
+
+        instructions, model = config["system_prompt"], config["model"]
 
         # For research agents, founder's choice overrides the resolved model
         if chosen_model_slug and role in RESEARCH_AGENT_NAMES:

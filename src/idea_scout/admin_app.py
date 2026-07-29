@@ -29,12 +29,14 @@ static path is resolved from ``BIFFO_PLUGINS_ROOT`` rather than from
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from idea_scout.adapter import CoreHttpError, CoreHttpGateway
 from idea_scout.definitions import (
     COMMUNITY_AGENT_NAME,
     COMPETITIVE_AGENT_NAME,
@@ -43,9 +45,42 @@ from idea_scout.definitions import (
     DEFAULT_SYNTHESIS_MODEL,
     NARRATIVE_AGENT_NAME,
     SYNTHESIS_AGENT_NAME,
+    seed_config_payloads,
 )
+from idea_scout.transport import CoreTransport
+
+_LOGGER = logging.getLogger(__name__)
 
 app = FastAPI(title="Idea Scout Admin", docs_url=None, redoc_url=None)
+
+
+@app.on_event("startup")
+async def _seed_agent_config() -> None:
+    """Seed the agent config on startup, tolerating Core transient failures.
+
+    Seeding guarantees rows exist so _resolve_agent can fail loudly on a missing
+    row rather than silently using the fallback. If Core is briefly unavailable
+    at cold start, the app continues anyway — the absence will fail loudly when
+    a founder tries to run.
+    """
+    try:
+        research_model = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
+        synthesis_model = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL)
+        transport = CoreTransport(founder_token="")
+        gateway = CoreHttpGateway(transport)
+        payload = seed_config_payloads(
+            research_model=research_model, synthesis_model=synthesis_model
+        )
+        result = await gateway.seed_own_config(config=payload)
+        created = sum(1 for r in result if r.get("created"))
+        already_present = len(result) - created
+        _LOGGER.info(f"Seeded {created} new agent config row(s); {already_present} already present")
+    except CoreHttpError as exc:
+        _LOGGER.exception(
+            "Failed to seed agent config at startup (Core may be unavailable). "
+            "Agent runs will fail loudly when started: %s",
+            exc,
+        )
 
 
 def _resolve_static_dir(plugins_root: str | None) -> Path:

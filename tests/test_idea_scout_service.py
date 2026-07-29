@@ -18,9 +18,11 @@ from fakes import (
 
 from idea_scout import models as m
 from idea_scout.definitions import (
+    DEFAULT_INSTRUCTIONS,
     MAX_CANDIDATES,
     MAX_PREVIOUSLY_SUGGESTED,
     RESEARCH_AGENT_NAMES,
+    seed_config_payloads,
 )
 from idea_scout.models import BuildType, Candidate, ScoutRun, UserProfile
 from idea_scout.service import (
@@ -34,11 +36,27 @@ OWNER = "founder-sub-abc"
 OTHER = "someone-else"
 
 
+def _seed_core(core: FakeCoreGateway) -> None:
+    """Seed the gateway with agent config payloads, insert-if-absent.
+
+    Matches the real seeding behaviour: existing rows are left alone.
+    """
+    payload = seed_config_payloads(research_model="research-m", synthesis_model="synthesis-m")
+    for row in payload:
+        role = row["role"]
+        if role not in core.configs:
+            core.configs[role] = {
+                "system_prompt": row["system_prompt"],
+                "model": row["model"],
+            }
+
+
 def _service(core: FakeCoreGateway) -> IdeaScoutService:
     return IdeaScoutService(core, research_model="research-m", synthesis_model="synthesis-m")
 
 
 async def _start(core: FakeCoreGateway, *, owner_sub: str = OWNER, complexity: int = 3):
+    _seed_core(core)
     return await _service(core).start_run(
         owner_sub=owner_sub, build_type="micro-saas", complexity=complexity
     )
@@ -442,6 +460,84 @@ async def test_a_synthesis_returning_an_empty_list_fails_the_run():
     assert state.status == m.FAILED
 
 
+# ── Agent config seeding and resolution ──────────────────────────────────────
+
+
+async def test_resolve_agent_raises_when_config_row_is_missing():
+    """Missing rows are no longer tolerated; the fallback is gone."""
+    core = FakeCoreGateway()
+    svc = _service(core)
+
+    from idea_scout.service import AgentConfigMissingError
+
+    with pytest.raises(AgentConfigMissingError) as exc_info:
+        await svc._resolve_agent("idea-scout-community", "fallback-model")
+
+    assert "idea-scout-community" in str(exc_info.value)
+
+
+async def test_resolve_agent_uses_stored_config_when_present():
+    """When a row exists, its prompt and model are used."""
+    core = FakeCoreGateway(
+        configs={
+            "idea-scout-community": {
+                "system_prompt": "Custom prompt",
+                "model": "custom-model-slug",
+            }
+        }
+    )
+    svc = _service(core)
+
+    instructions, model = await svc._resolve_agent("idea-scout-community", "fallback-model")
+
+    assert instructions == "Custom prompt"
+    assert model == "custom-model-slug"
+
+
+async def test_research_agent_config_overridden_by_chosen_model_slug():
+    """The founder's chosen model overrides the stored model for research agents only."""
+    core = FakeCoreGateway(
+        configs={
+            "idea-scout-community": {
+                "system_prompt": "Stored prompt",
+                "model": "stored-model",
+            }
+        }
+    )
+    svc = _service(core)
+
+    instructions, model = await svc._resolve_agent(
+        "idea-scout-community",
+        "fallback-model",
+        chosen_model_slug="founder-chosen-model",
+    )
+
+    assert instructions == "Stored prompt"
+    assert model == "founder-chosen-model"
+
+
+async def test_synthesis_agent_config_not_overridden_by_chosen_model_slug():
+    """The founder's chosen model does NOT override the stored model for synthesis."""
+    core = FakeCoreGateway(
+        configs={
+            "idea-scout-synthesis": {
+                "system_prompt": "Synthesis prompt",
+                "model": "synthesis-model",
+            }
+        }
+    )
+    svc = _service(core)
+
+    instructions, model = await svc._resolve_agent(
+        "idea-scout-synthesis",
+        "fallback-model",
+        chosen_model_slug="founder-chosen-model",
+    )
+
+    assert instructions == "Synthesis prompt"
+    assert model == "synthesis-model"  # not overridden
+
+
 async def test_a_completed_run_is_not_re_synthesised_on_further_polls():
     """Every poll after completion must be a read — re-firing would bill the
     founder again for a shortlist they already have."""
@@ -495,8 +591,6 @@ async def test_a_configured_prompt_and_model_override_the_built_in_default():
 async def test_the_built_in_default_is_used_when_nothing_is_configured():
     core = FakeCoreGateway()
     await _start(core)
-
-    from idea_scout.definitions import DEFAULT_INSTRUCTIONS
 
     assert (
         core.requested[0]["definition"]["instructions"]
@@ -793,7 +887,9 @@ async def test_founders_chosen_model_beats_the_admin_row():
     """When a founder specifies research_model, it overrides the admin config."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
-    core.configs = {"idea-scout-community": {"system_prompt": "...", "model": "admin-model"}}
+    # Override only the first research agent, but seed all agents first
+    _seed_core(core)
+    core.configs["idea-scout-community"]["model"] = "admin-model"
 
     await _service(core).start_run(
         owner_sub=OWNER,
@@ -812,12 +908,10 @@ async def test_admin_row_model_beats_builtin_default():
     """When no founder choice, but admin config exists, use the admin model."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
-    # Set admin config for all three research agents
-    core.configs = {
-        "idea-scout-community": {"system_prompt": "...", "model": "admin-model"},
-        "idea-scout-narrative": {"system_prompt": "...", "model": "admin-model"},
-        "idea-scout-competitive": {"system_prompt": "...", "model": "admin-model"},
-    }
+    # Seed all agents first, then override the research agents' models
+    _seed_core(core)
+    for role in RESEARCH_AGENT_NAMES:
+        core.configs[role]["model"] = "admin-model"
 
     await _service(core).start_run(
         owner_sub=OWNER,
@@ -832,9 +926,10 @@ async def test_admin_row_model_beats_builtin_default():
 
 
 async def test_builtin_default_used_when_neither_founder_choice_nor_admin_row():
-    """When no founder choice and no admin config, use the service default."""
+    """When no founder choice and no admin override, use the seeded default model."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)  # Seeds with the service's default research model
 
     await _service(core).start_run(
         owner_sub=OWNER,
@@ -852,6 +947,7 @@ async def test_research_model_is_recorded_on_the_run():
     """The chosen research_model's slug is stored so it can be displayed to the founder."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)
 
     run = await _service(core).start_run(
         owner_sub=OWNER,
@@ -868,6 +964,7 @@ async def test_research_model_none_when_not_specified():
     """When founder doesn't choose a model, research_model is None."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)
 
     run = await _service(core).start_run(
         owner_sub=OWNER,
@@ -882,6 +979,7 @@ async def test_founder_choice_reaches_all_three_research_agents_but_not_synthesi
     """The founder's model choice affects ONLY the research agents, not synthesis."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)
 
     await _service(core).start_run(
         owner_sub=OWNER,

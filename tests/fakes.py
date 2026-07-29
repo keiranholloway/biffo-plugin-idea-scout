@@ -211,6 +211,20 @@ class FakeCoreGateway:
     async def get_own_config(self, *, role: str) -> dict[str, Any] | None:
         return self.configs.get(role)
 
+    async def seed_own_config(self, *, config: list[dict[str, Any]]) -> list[dict[str, bool]]:
+        """Seed roles, storing those not already present."""
+        result = []
+        for row in config:
+            role = row["role"]
+            created = role not in self.configs
+            if created:
+                self.configs[role] = {
+                    "system_prompt": row["system_prompt"],
+                    "model": row["model"],
+                }
+            result.append({"role": role, "created": created})
+        return result
+
     # ── Runs ─────────────────────────────────────────────────────────────────
 
     async def create_run(

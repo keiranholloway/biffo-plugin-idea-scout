@@ -6,6 +6,11 @@ in the plugin then watches them — the orchestration engine does, via an
 ``agent_fan_in`` action (biffo-template#657) that fires the synthesis agent once
 every research run in the chain is terminal.
 
+Core resolves the synthesis agent's ``instructions`` and ``model`` from the
+plugin's seeded config at agent-run creation time, so those fields are no longer
+frozen into the workflow definition — an admin's edits to the stored prompt and
+model now take effect immediately.
+
 **Without this definition, a scout run never leaves ``researching``.** The three
 research agents still run and still bill; nothing reconciles them. That is the
 whole failure mode this script exists to prevent, and it is silent — which is
@@ -39,7 +44,6 @@ from idea_scout.definitions import (  # noqa: E402
     DEFAULT_SYNTHESIS_MODEL,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
-    SYNTHESIS_INSTRUCTIONS,
     SYNTHESIS_MAX_TURNS,
 )
 
@@ -48,7 +52,7 @@ WORKFLOW_NAME = "Idea Scout — synthesise once research completes"
 _DEFINITIONS_PATH = "/api/v1/admin/orchestration/workflows"
 
 
-def definition(*, model: str) -> dict:
+def definition(*, model: str) -> dict:  # noqa: ARG001
     """The workflow this plugin needs in order to finish a run on its own.
 
     Triggered by every ``agent.run.completed``: the fan-in action itself decides
@@ -56,6 +60,10 @@ def definition(*, model: str) -> dict:
     That is deliberate — filtering by agent name in the trigger would still fire
     three times per run (once per research agent), and the action's own
     all-siblings-terminal check is what collapses those three into one.
+
+    The ``instructions`` and ``model`` are no longer included here — Core resolves
+    them from the plugin's seeded config at agent-run creation time, so an admin's
+    edits now take effect immediately.
     """
     return {
         "name": WORKFLOW_NAME,
@@ -67,8 +75,6 @@ def definition(*, model: str) -> dict:
             # actually requests — see idea_scout.definitions.
             "expect_agents": ",".join(RESEARCH_AGENT_NAMES),
             "agent_name": SYNTHESIS_AGENT_NAME,
-            "instructions": SYNTHESIS_INSTRUCTIONS,
-            "model": model,
             "max_turns": SYNTHESIS_MAX_TURNS,
         },
         "enabled": True,

@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
 """Seed the admin-editable prompt/model config for Idea Scout's four agents.
 
-Unlike the build types and the fan-in workflow, this one is **not** a hard
-prerequisite: ``IdeaScoutService._resolve_agent`` falls back to the built-in
-prompt in ``idea_scout.definitions`` when a role has no configured row, so the
-plugin works without it. Seeding exists so an admin has something to edit in the
-UI rather than an empty page, and so the live config starts identical to what
-the code would have run.
-
-Note the synthesis prompt is seeded here **and** carried in the fan-in workflow
-definition (``seed_fan_in_workflow.py``), because the engine — not this plugin —
-is what fires the synthesis agent, and the engine reads its instructions from the
-workflow's ``action_config``. Editing this row alone therefore changes nothing
-for synthesis; the workflow is the live copy. That is a wart of moving the
-sequencing into the engine, and worth knowing before wondering why an edit had
-no effect.
+This is a manual entry point for operators with admin credentials. The plugin
+guarantees rows exist at startup via ``seed_config_payloads()``, so editing this
+row now takes effect immediately for synthesis — it is no longer frozen into the
+workflow.
 
 Usage:
     CORE_API_URL=https://<api-id>.execute-api.<region>.amazonaws.com \
@@ -35,11 +25,9 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from idea_scout.definitions import (  # noqa: E402
-    DEFAULT_INSTRUCTIONS,
     DEFAULT_RESEARCH_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
-    RESEARCH_AGENT_NAMES,
-    SYNTHESIS_AGENT_NAME,
+    seed_config_payloads,
 )
 
 _CHAT_AGENTS_PATH = "/api/v1/admin/plugins/idea-scout/chat-agents"
@@ -52,36 +40,14 @@ _DEFAULT_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_
 
 
 def payloads() -> list[dict[str, Any]]:
-    """One row per agent role, carrying the built-in prompt verbatim.
+    """One row per agent role, built by the shared payload builder.
 
-    Seeding the *same* text the code falls back to means turning configuration on
-    changes nothing observable — the usual trap being a seed that quietly differs
-    from the default and shifts behaviour the moment it lands.
+    Uses environment overrides if set, falling back to the built-in constants.
     """
-    rows = [
-        {
-            "agent_key": name,
-            "agent_name": name,
-            "role": name,
-            "system_prompt": DEFAULT_INSTRUCTIONS[name],
-            "model": _DEFAULT_RESEARCH_MODEL,
-            "required_group": "founder",
-            "active": True,
-        }
-        for name in RESEARCH_AGENT_NAMES
-    ]
-    rows.append(
-        {
-            "agent_key": SYNTHESIS_AGENT_NAME,
-            "agent_name": SYNTHESIS_AGENT_NAME,
-            "role": SYNTHESIS_AGENT_NAME,
-            "system_prompt": DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME],
-            "model": _DEFAULT_SYNTHESIS_MODEL,
-            "required_group": "founder",
-            "active": True,
-        }
+    return seed_config_payloads(
+        research_model=_DEFAULT_RESEARCH_MODEL,
+        synthesis_model=_DEFAULT_SYNTHESIS_MODEL,
     )
-    return rows
 
 
 def _request(method: str, url: str, token: str, body: dict | None = None) -> Any:

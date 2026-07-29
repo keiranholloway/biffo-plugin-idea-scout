@@ -12,7 +12,6 @@ from _scripts import load_script
 from idea_scout.definitions import (
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
-    SYNTHESIS_INSTRUCTIONS,
 )
 
 _seed = load_script("seed_fan_in_workflow")
@@ -35,8 +34,20 @@ def test_it_fires_the_synthesis_agent_the_plugin_looks_for():
     assert config["agent_name"] == SYNTHESIS_AGENT_NAME
 
 
-def test_it_carries_the_synthesis_prompt():
-    assert definition(model="m")["action_config"]["instructions"] == SYNTHESIS_INSTRUCTIONS
+def test_it_does_not_carry_the_synthesis_prompt_or_model():
+    """The prompt and model are no longer frozen into the workflow — Core resolves
+    them from the plugin's seeded config, so admin edits take effect immediately."""
+    config = definition(model="m")["action_config"]
+
+    assert "instructions" not in config
+    assert "model" not in config
+
+
+def test_it_carries_max_turns():
+    """Max turns is still required to bound the synthesis agent's cost."""
+    config = definition(model="m")["action_config"]
+
+    assert "max_turns" in config
 
 
 def test_it_triggers_on_agent_completions():
@@ -54,7 +65,3 @@ def test_it_is_enabled_and_named_stably():
 
     assert payload["enabled"] is True
     assert payload["name"] == WORKFLOW_NAME
-
-
-def test_the_model_is_configurable():
-    assert definition(model="a/custom-model")["action_config"]["model"] == "a/custom-model"

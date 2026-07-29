@@ -15,7 +15,12 @@ from __future__ import annotations
 import pytest
 from fakes import FakeCoreGateway
 
-from idea_scout.definitions import PREFERENCE_KEYS, PREFERENCES, preference_brief
+from idea_scout.definitions import (
+    PREFERENCE_KEYS,
+    PREFERENCES,
+    preference_brief,
+    seed_config_payloads,
+)
 from idea_scout.service import IdeaScoutService, UnknownPreferenceError
 
 OWNER = "founder-sub-abc"
@@ -25,7 +30,20 @@ def _service(core: FakeCoreGateway) -> IdeaScoutService:
     return IdeaScoutService(core, research_model="research-m", synthesis_model="synthesis-m")
 
 
+def _seed_core(core: FakeCoreGateway) -> None:
+    """Seed the gateway with agent config payloads, insert-if-absent."""
+    payload = seed_config_payloads(research_model="research-m", synthesis_model="synthesis-m")
+    for row in payload:
+        role = row["role"]
+        if role not in core.configs:
+            core.configs[role] = {
+                "system_prompt": row["system_prompt"],
+                "model": row["model"],
+            }
+
+
 async def _start(core: FakeCoreGateway, preferences: list[str] | None = None):
+    _seed_core(core)
     return await _service(core).start_run(
         owner_sub=OWNER, build_type="micro-saas", complexity=3, preferences=preferences
     )
