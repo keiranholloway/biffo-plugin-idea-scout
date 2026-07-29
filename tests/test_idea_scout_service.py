@@ -133,8 +133,11 @@ async def test_the_brief_carries_titles_the_founder_has_already_been_shown():
     await _start(core)
 
     brief = core.requested[0]["input_payload"]["brief"]
-    assert "Invoice chaser for clinics" in brief["previously_suggested"]
-    assert "Rota planner for locums" in brief["previously_suggested"]
+    titles = [e["title"] for e in brief["previously_suggested"]]
+    assert "Invoice chaser for clinics" in titles
+    assert "Rota planner for locums" in titles
+    # The pitch travels too: a title names an idea without describing it (#49).
+    assert all(e["pitch"] for e in brief["previously_suggested"])
 
 
 async def test_the_previously_suggested_key_is_omitted_when_there_is_no_history():
@@ -160,9 +163,11 @@ async def test_only_the_requesting_founders_own_titles_reach_the_brief():
 
     await _start(core)
 
-    suggested = core.requested[0]["input_payload"]["brief"]["previously_suggested"]
-    assert "Mine" in suggested
-    assert "Theirs" not in suggested
+    titles = [
+        e["title"] for e in core.requested[0]["input_payload"]["brief"]["previously_suggested"]
+    ]
+    assert "Mine" in titles
+    assert "Theirs" not in titles
 
 
 async def test_the_history_is_capped_and_keeps_the_most_recent():
@@ -180,7 +185,8 @@ async def test_the_history_is_capped_and_keeps_the_most_recent():
 
     suggested = core.requested[0]["input_payload"]["brief"]["previously_suggested"]
     assert len(suggested) == MAX_PREVIOUSLY_SUGGESTED
-    assert "Newest idea" in suggested, "the cap dropped the most recent instead of the oldest"
+    titles = [e["title"] for e in suggested]
+    assert "Newest idea" in titles, "the cap dropped the most recent instead of the oldest"
 
 
 async def test_an_empty_profile_is_omitted_from_the_brief_rather_than_sent_as_nulls():
