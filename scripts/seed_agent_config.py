@@ -36,14 +36,19 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from idea_scout.definitions import (  # noqa: E402
     DEFAULT_INSTRUCTIONS,
+    DEFAULT_RESEARCH_MODEL,
+    DEFAULT_SYNTHESIS_MODEL,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
 )
 
 _CHAT_AGENTS_PATH = "/api/v1/admin/plugins/idea-scout/chat-agents"
 
-_DEFAULT_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", "anthropic/claude-sonnet-4")
-_DEFAULT_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", "anthropic/claude-opus-4-8")
+# Environment overrides the built-in defaults, but always fall back to the
+# constants in definitions.py, not a separate hardcoded copy. This ensures
+# the seed, admin_app, and app.py all use the same values.
+_DEFAULT_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
+_DEFAULT_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL)
 
 
 def payloads() -> list[dict[str, Any]]:
