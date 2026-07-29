@@ -29,7 +29,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from .adapter import CoreHttpGateway
-from .definitions import MAX_COMPLEXITY, MIN_COMPLEXITY, PREFERENCES, complexity_label
+from .definitions import (
+    DEFAULT_RESEARCH_MODEL,
+    DEFAULT_SYNTHESIS_MODEL,
+    MAX_COMPLEXITY,
+    MIN_COMPLEXITY,
+    PREFERENCES,
+    complexity_label,
+)
 from .models import IN_FLIGHT_STATUSES
 from .service import (
     IdeaScoutError,
@@ -38,6 +45,7 @@ from .service import (
     MalformedCandidatesError,
     RunNotFoundError,
     UnknownBuildTypeError,
+    UnknownModelError,
     UnknownPreferenceError,
 )
 from .transport import CoreTransport
@@ -48,8 +56,8 @@ from .transport import CoreTransport
 # ``web_search`` registry tool — failed open on a deployment with no Brave
 # credential: the tool was silently dropped and every run produced no findings.
 # Synthesis does not search; it reasons over what research hands it.
-_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", "anthropic/claude-sonnet-4:online")
-_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", "anthropic/claude-opus-4-8")
+_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
+_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL)
 
 #: The founder gate — verifies the shared-Cognito JWT and requires the group.
 #: The verified user carries its raw token, forwarded to Core by the transport.
@@ -78,6 +86,7 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     UnknownBuildTypeError: 422,
     InvalidComplexityError: 422,
     UnknownPreferenceError: 422,
+    UnknownModelError: 422,
     MalformedCandidatesError: 502,
 }
 
@@ -104,6 +113,9 @@ class StartRunRequest(BaseModel):
     # the service, not here — the same place the build type is checked, so both
     # rejections read the same way.
     preferences: list[str] = Field(default_factory=list, max_length=len(PREFERENCES))
+    # The catalog entry ID the founder chose for research agents. Optional;
+    # when not specified, the admin's configured model or built-in default is used.
+    research_model: str | None = None
 
 
 def _run_state(run: Any) -> dict[str, Any]:
@@ -121,6 +133,7 @@ def _run_state(run: Any) -> dict[str, Any]:
         "created_at": run.created_at,
         "in_flight": run.status in IN_FLIGHT_STATUSES,
         "failure_reason": run.failure_reason,
+        "research_model": run.research_model,
     }
 
 
@@ -143,6 +156,41 @@ async def list_build_types(
     """The active build-type categories, for the run form's picker."""
     types = await svc.list_build_types()
     return [{"key": t.key, "label": t.label, "description": t.description} for t in types]
+
+
+@app.get("/models")
+async def list_models(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> list[dict]:
+    """The active, web-capable models founders can choose for research agents."""
+    models = await svc.list_model_catalog()
+    return [
+        {
+            "id": m.id,
+            "model_id": m.model_id,
+            "label": m.label,
+            "is_default": m.is_default,
+        }
+        for m in models
+    ]
+
+
+@app.get("/models/last-used")
+async def get_last_used_model(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict:
+    """The model slug from this founder's most recent run, if any.
+
+    Returns the research_model of the newest run, or None if no run has set one.
+    This is owner-scoped: only this founder's runs are considered.
+    """
+    runs = await svc.list_runs(owner_sub=founder.sub)
+    for run in runs:
+        if run.research_model:
+            return {"research_model": run.research_model}
+    return {"research_model": None}
 
 
 @app.get("/preferences")
@@ -188,6 +236,7 @@ async def start_run(
         build_type=body.build_type,
         complexity=body.complexity,
         preferences=body.preferences,
+        research_model=body.research_model,
     )
     return _run_state(run)
 

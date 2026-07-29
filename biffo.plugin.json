@@ -99,6 +99,12 @@
           "type": "Boolean",
           "nullable": true,
           "description": "Soft-delete flag. True means the founder removed this run from their sidebar; the row is never destroyed, just excluded from list_runs. Nullable for the same declared-default reason as status — treat NULL as false."
+        },
+        {
+          "name": "research_model",
+          "type": "String(200)",
+          "nullable": true,
+          "description": "The OpenRouter model slug the research agents ran on (e.g., 'anthropic/claude-opus:online'). NULL means the admin's configured model or built-in default was used — it is not missing data. Stored as the slug (not the catalog entry id) so the run remains explicable if the catalog entry is deleted."
         }
       ],
       "indexes": [
@@ -305,6 +311,79 @@
           ]
         }
       }
+    },
+    {
+      "name": "idea_scout_model_catalog",
+      "columns": [
+        {
+          "name": "model_id",
+          "type": "String(200)",
+          "nullable": false,
+          "description": "OpenRouter slug for this model (e.g., 'anthropic/claude-opus:online')."
+        },
+        {
+          "name": "label",
+          "type": "String(200)",
+          "nullable": false,
+          "description": "What the founder sees in the model picker (e.g., 'Claude Opus')."
+        },
+        {
+          "name": "active",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Whether this model is offered today. Nullable because the generated migration DDL does not apply declared defaults — treat NULL as false; every create request sets it explicitly."
+        },
+        {
+          "name": "is_default",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Whether this is the admin's preferred model for new runs. Nullable for the same declared-default reason as active — treat NULL as false."
+        },
+        {
+          "name": "web_capable",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Whether this model supports web search via OpenRouter's :online suffix. This is what decides whether a founder may select it for research agents, which require OpenRouter's :online suffix for web search capability. Nullable for the same declared-default reason — treat NULL as false."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_idea_scout_model_catalog_tenant_model_id",
+          "columns": [
+            "tenant_id",
+            "model_id"
+          ],
+          "unique": true
+        }
+      ],
+      "permissions": {
+        "list": {
+          "allowed": true,
+          "required_role": []
+        },
+        "read": {
+          "allowed": true,
+          "required_role": []
+        },
+        "create": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        },
+        "update": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        },
+        "delete": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        }
+      }
     }
   ],
   "api_routes": [
@@ -342,6 +421,41 @@
       "table": "idea_scout_build_types",
       "operation": "delete",
       "description": "Remove a build-type category (admin only). Prefer setting active=false: existing runs reference the key."
+    },
+    {
+      "method": "GET",
+      "path": "/idea_scout_model_catalog",
+      "table": "idea_scout_model_catalog",
+      "operation": "list",
+      "description": "List model catalog entries. Readable by any authenticated caller — the founder's run form needs it — while only an admin can change the list."
+    },
+    {
+      "method": "GET",
+      "path": "/idea_scout_model_catalog/{id}",
+      "table": "idea_scout_model_catalog",
+      "operation": "read",
+      "description": "Get a single model catalog entry."
+    },
+    {
+      "method": "POST",
+      "path": "/idea_scout_model_catalog",
+      "table": "idea_scout_model_catalog",
+      "operation": "create",
+      "description": "Add a model to the catalog (admin only)."
+    },
+    {
+      "method": "PUT",
+      "path": "/idea_scout_model_catalog/{id}",
+      "table": "idea_scout_model_catalog",
+      "operation": "update",
+      "description": "Update a model catalog entry — relabel, toggle active/is_default/web_capable (admin only)."
+    },
+    {
+      "method": "DELETE",
+      "path": "/idea_scout_model_catalog/{id}",
+      "table": "idea_scout_model_catalog",
+      "operation": "delete",
+      "description": "Remove a model from the catalog (admin only). Prefer setting active=false: existing runs reference the model."
     }
   ],
   "event_subscriptions": [],

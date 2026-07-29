@@ -35,6 +35,8 @@ vi.mock("./lib/api", async (importOriginal) => {
         ]),
       getComplexityLevels: () =>
         Promise.resolve([{ value: 3, label: "moderate" }]),
+      getModels: () => Promise.resolve([]),
+      getLastUsedModel: () => Promise.resolve(null),
       getRun: vi.fn(),
       startRun: vi.fn(),
       deleteRun: vi.fn(),

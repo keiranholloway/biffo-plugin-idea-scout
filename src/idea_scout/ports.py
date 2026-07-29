@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from .models import AgentRunView, BuildType, Candidate, ScoutRun, UserProfile
+from .models import AgentRunView, BuildType, Candidate, ModelCatalogEntry, ScoutRun, UserProfile
 
 
 class CoreGateway(Protocol):
@@ -37,6 +37,11 @@ class CoreGateway(Protocol):
         ``sort_order``. Admin-managed through generic CRUD."""
         ...
 
+    async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
+        """The model catalog entries offered in the run form, ascending by
+        ``label``. Admin-managed through generic CRUD."""
+        ...
+
     async def get_own_config(self, *, role: str) -> dict[str, Any] | None:
         """The live, admin-editable config (``system_prompt`` + ``model``) for one
         of this plugin's own agent roles, or ``None`` if never configured — in
@@ -55,6 +60,7 @@ class CoreGateway(Protocol):
         preferences: list[str],
         research_run_ids: list[str],
         chain_id: str,
+        research_model: str | None = None,
     ) -> ScoutRun: ...
 
     async def get_run(self, *, owner_sub: str, run_id: str) -> ScoutRun | None: ...

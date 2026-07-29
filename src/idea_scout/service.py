@@ -91,6 +91,18 @@ class UnknownPreferenceError(IdeaScoutError):
         super().__init__(f"Unknown preference key(s): {', '.join(sorted(keys))}")
 
 
+class UnknownModelError(IdeaScoutError):
+    """The requested research model is not available.
+
+    A model may be unknown (not in the catalog), inactive (withdrawn by admin),
+    or not web-capable (missing the :online suffix for research agents).
+    """
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+        super().__init__(f"Research model not available: {model_id}")
+
+
 class MalformedCandidatesError(IdeaScoutError):
     """The synthesis run finished without a valid structured shortlist.
 
@@ -174,6 +186,12 @@ class IdeaScoutService:
     async def list_build_types(self) -> list[BuildType]:
         return await self._core.list_build_types(active_only=True)
 
+    async def list_model_catalog(self) -> list:  # type: ignore
+        """Admin-configured models for research agents, filtered to active and web-capable."""
+        entries = await self._core.list_model_catalog(active_only=True)
+        # Only return models that are web-capable, since research agents require web search
+        return [e for e in entries if e.web_capable]
+
     # ── Starting a run ───────────────────────────────────────────────────────
 
     async def start_run(
@@ -183,6 +201,7 @@ class IdeaScoutService:
         build_type: str,
         complexity: int,
         preferences: list[str] | None = None,
+        research_model: str | None = None,
     ) -> ScoutRun:
         """Validate the inputs, brief the three research agents, and record the run.
 
@@ -214,6 +233,17 @@ class IdeaScoutService:
         if chosen is None:
             raise UnknownBuildTypeError(build_type)
 
+        # Validate and resolve research_model if provided. Must be present, active,
+        # and web-capable. Resolve once here to the model slug, then pass it down
+        # so we don't re-fetch the catalog for each research agent.
+        chosen_model_slug: str | None = None
+        if research_model is not None:
+            catalog = await self._core.list_model_catalog(active_only=False)
+            model_entry = next((e for e in catalog if e.id == research_model), None)
+            if model_entry is None or not model_entry.active or not model_entry.web_capable:
+                raise UnknownModelError(research_model)
+            chosen_model_slug = model_entry.model_id
+
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
         previously_suggested = await self._previously_suggested(owner_sub=owner_sub)
         brief = self._build_brief(
@@ -232,7 +262,9 @@ class IdeaScoutService:
 
         research_run_ids = []
         for agent_name in RESEARCH_AGENT_NAMES:
-            instructions, model = await self._resolve_agent(agent_name, self._research_model)
+            instructions, model = await self._resolve_agent(
+                agent_name, self._research_model, chosen_model_slug=chosen_model_slug
+            )
             run_id = await self._core.request_agent_run(
                 agent_name=agent_name,
                 definition=research_definition(model=model, instructions=instructions),
@@ -250,6 +282,7 @@ class IdeaScoutService:
             preferences=chosen_preferences,
             research_run_ids=research_run_ids,
             chain_id=chain_id,
+            research_model=chosen_model_slug,
         )
 
     # ── Reading a run (and advancing it) ─────────────────────────────────────
@@ -401,13 +434,28 @@ class IdeaScoutService:
             raise RunNotFoundError(run_id)
         return run
 
-    async def _resolve_agent(self, role: str, fallback_model: str) -> tuple[str, str]:
+    async def _resolve_agent(
+        self, role: str, fallback_model: str, chosen_model_slug: str | None = None
+    ) -> tuple[str, str]:
         """The live, admin-editable prompt and model for an agent role, falling
-        back to the built-in default when an admin has never configured one."""
+        back to the built-in default when an admin has never configured one.
+
+        For research agents only, the founder's chosen_model_slug (already
+        resolved to the actual model id) overrides the model returned from
+        admin config or built-in fallback. Synthesis always uses admin config
+        or built-in, never the founder's choice.
+        """
         config = await self._core.get_own_config(role=role)
         if config:
-            return config["system_prompt"], config["model"]
-        return DEFAULT_INSTRUCTIONS[role], fallback_model
+            instructions, model = config["system_prompt"], config["model"]
+        else:
+            instructions, model = DEFAULT_INSTRUCTIONS[role], fallback_model
+
+        # For research agents, founder's choice overrides the resolved model
+        if chosen_model_slug and role in RESEARCH_AGENT_NAMES:
+            model = chosen_model_slug
+
+        return instructions, model
 
     async def _previously_suggested(self, *, owner_sub: str) -> list[str]:
         """Titles this founder has already been shown, newest first (#49).

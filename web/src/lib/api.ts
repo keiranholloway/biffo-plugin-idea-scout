@@ -40,6 +40,13 @@ export interface Preference {
   label: string
 }
 
+export interface ModelOption {
+  id: string
+  model_id: string
+  label: string
+  is_default: boolean
+}
+
 export interface RunState {
   run_id: string
   status: RunStatus
@@ -47,6 +54,7 @@ export interface RunState {
   complexity: number
   complexity_label: string
   preferences: string[]
+  research_model?: string
   created_at: string | null
   in_flight: boolean
   failure_reason: string | null
@@ -120,8 +128,13 @@ export function createApi(getIdToken: () => string | null) {
     getBuildTypes: () => request<BuildType[]>('GET', '/build-types'),
     getComplexityLevels: () => request<ComplexityLevel[]>('GET', '/complexity-levels'),
     getPreferences: () => request<Preference[]>('GET', '/preferences'),
-    startRun: (build_type: string, complexity: number, preferences: string[] = []) =>
-      request<RunState>('POST', '/runs', { build_type, complexity, preferences }),
+    getModels: () => request<ModelOption[]>('GET', '/models'),
+    getLastUsedModel: () => request<string | null>('GET', '/models/last-used'),
+    startRun: (build_type: string, complexity: number, preferences: string[] = [], research_model?: string) => {
+      const body: Record<string, unknown> = { build_type, complexity, preferences }
+      if (research_model != null) body.research_model = research_model
+      return request<RunState>('POST', '/runs', body)
+    },
     listRuns: () => request<RunState[]>('GET', '/runs'),
     getRun: (id: string) => request<RunState>('GET', `/runs/${id}`),
     getCandidates: (id: string) => request<CandidatesResponse>('GET', `/runs/${id}/candidates`),

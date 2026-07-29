@@ -36,6 +36,7 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from idea_scout.definitions import (  # noqa: E402
+    DEFAULT_SYNTHESIS_MODEL,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
     SYNTHESIS_INSTRUCTIONS,
@@ -43,7 +44,6 @@ from idea_scout.definitions import (  # noqa: E402
 )
 
 WORKFLOW_NAME = "Idea Scout — synthesise once research completes"
-DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4-8"
 
 _DEFINITIONS_PATH = "/api/v1/admin/orchestration/workflows"
 

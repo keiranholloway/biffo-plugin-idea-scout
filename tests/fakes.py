@@ -25,6 +25,7 @@ from idea_scout.models import (
     AgentRunView,
     BuildType,
     Candidate,
+    ModelCatalogEntry,
     ScoutRun,
     UserProfile,
 )
@@ -164,6 +165,7 @@ class FakeCoreGateway:
         profile: UserProfile | None = None,
         build_types: list[BuildType] | None = None,
         configs: dict[str, dict[str, Any]] | None = None,
+        model_catalog: list[ModelCatalogEntry] | None = None,
     ) -> None:
         self.profile = profile if profile is not None else UserProfile(headline="Fractional CTO")
         self.build_types = (
@@ -172,6 +174,7 @@ class FakeCoreGateway:
             else [BuildType(id="bt1", key="micro-saas", label="MicroSaaS", active=True)]
         )
         self.configs = configs or {}
+        self.model_catalog = model_catalog or []
         self.runs: dict[str, ScoutRun] = {}
         self.candidates: list[Candidate] = []
         self.agent_runs: dict[str, FakeAgentRun] = {}
@@ -199,6 +202,12 @@ class FakeCoreGateway:
             types = [t for t in types if t.active]
         return list(types)
 
+    async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
+        entries = self.model_catalog
+        if active_only:
+            entries = [e for e in entries if e.active]
+        return sorted(entries, key=lambda e: e.label)
+
     async def get_own_config(self, *, role: str) -> dict[str, Any] | None:
         return self.configs.get(role)
 
@@ -214,6 +223,7 @@ class FakeCoreGateway:
         preferences: list[str],
         research_run_ids: list[str],
         chain_id: str,
+        research_model: str | None = None,
     ) -> ScoutRun:
         run = ScoutRun(
             id=self._id("run"),
@@ -226,6 +236,7 @@ class FakeCoreGateway:
             profile_snapshot=profile_snapshot,
             preferences=list(preferences),
             created_at=f"2026-07-27T00:00:{len(self.runs):02d}Z",
+            research_model=research_model,
         )
         self.runs[run.id] = run
         return run

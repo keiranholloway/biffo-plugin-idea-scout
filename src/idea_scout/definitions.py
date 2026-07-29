@@ -415,6 +415,13 @@ DEFAULT_INSTRUCTIONS: dict[str, str] = {
     SYNTHESIS_AGENT_NAME: SYNTHESIS_INSTRUCTIONS,
 }
 
+#: Built-in default models. Research agents require the :online suffix to access
+#: web search through OpenRouter; synthesis does not search. These are the
+#: single source of truth for all readers: app.py, admin_app.py, and
+#: seed_agent_config.py all import and use these, so the three cannot drift apart.
+DEFAULT_RESEARCH_MODEL = "anthropic/claude-sonnet-4:online"
+DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4-8"
+
 
 # ── Definition snapshots (what the runtime executes) ─────────────────────────
 
