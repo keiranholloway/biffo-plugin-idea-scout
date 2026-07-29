@@ -311,38 +311,26 @@ describe('Idea Scout admin panel', () => {
       })
     })
 
-    it('shows a warning on the synthesis agent that it is not live-editable', async () => {
+    it('shows no not-live-editable warning on the synthesis agent', async () => {
+      // The synthesis prompt used to be frozen into the orchestration workflow's
+      // action_config, so editing this row saved and changed nothing — the warning
+      // existed to stop that silent no-op. Core now resolves the prompt from this
+      // row at agent-run creation, so the warning would be a lie in the opposite
+      // direction (biffo-template#909).
       const user = userEvent.setup()
       render(<App />)
 
       const agentsTab = await screen.findByRole('button', { name: /Agents/i })
       await user.click(agentsTab)
 
+      // Anchor on the synthesis row actually being rendered, so this cannot pass
+      // by asserting the absence of a warning on a tab that never loaded.
       await waitFor(() => {
-        // Check that the synthesis agent has a warning
-        const warnings = screen.getAllByText(/Not live-editable/i)
-        expect(warnings.length).toBeGreaterThan(0)
+        expect(screen.getAllByText('idea-scout-synthesis').length).toBeGreaterThan(0)
       })
-    })
 
-    it('does not show a warning on research agents', async () => {
-      const user = userEvent.setup()
-      render(<App />)
-
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
-      await user.click(agentsTab)
-
-      await waitFor(() => {
-        // Get the research agent rows by looking for the research prompt text
-        const researchPromptElement = screen.getByText('Research communities...')
-        const agentRow = researchPromptElement.closest('.admin-list-item')
-
-        // The warning should not appear in the research agent row
-        if (agentRow) {
-          const warningInRow = agentRow.querySelector('.admin-synthesis-warning')
-          expect(warningInRow).toBeFalsy()
-        }
-      })
+      expect(screen.queryByText(/Not live-editable/i)).toBeNull()
+      expect(document.querySelector('.admin-synthesis-warning')).toBeNull()
     })
 
     it('shows real built-in prompts, not placeholder text', async () => {
