@@ -409,8 +409,8 @@ class IdeaScoutService:
             return config["system_prompt"], config["model"]
         return DEFAULT_INSTRUCTIONS[role], fallback_model
 
-    async def _previously_suggested(self, *, owner_sub: str) -> list[dict[str, str]]:
-        """Ideas this founder has already been shown, newest first (#49).
+    async def _previously_suggested(self, *, owner_sub: str) -> list[str]:
+        """Titles this founder has already been shown, newest first (#49).
 
         Ordered by the *run's* timestamp rather than the candidate's: a run's
         candidates are all written together, so the run is the unit that has a
@@ -432,19 +432,16 @@ class IdeaScoutService:
         )
 
         seen: set[str] = set()
-        suggested: list[dict[str, str]] = []
+        titles: list[str] = []
         for candidate in ordered:
             key = candidate.title.strip().casefold()
             if not key or key in seen:
                 continue
             seen.add(key)
-            # Title *and* pitch. A title names an idea without describing it,
-            # and a model asked to avoid names simply renames — measured on dev
-            # as 3 of 4 near-duplicates with no verbatim title repeat (#49).
-            suggested.append({"title": candidate.title, "pitch": candidate.pitch})
-            if len(suggested) == MAX_PREVIOUSLY_SUGGESTED:
+            titles.append(candidate.title)
+            if len(titles) == MAX_PREVIOUSLY_SUGGESTED:
                 break
-        return suggested
+        return titles
 
     @staticmethod
     def _build_brief(
@@ -453,7 +450,7 @@ class IdeaScoutService:
         build_type: BuildType,
         complexity: int,
         preferences: list[str],
-        previously_suggested: list[dict[str, str]] | None = None,
+        previously_suggested: list[str] | None = None,
     ) -> dict[str, Any]:
         """What the agents are told about who this run is for.
 
