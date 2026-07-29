@@ -29,7 +29,15 @@ from __future__ import annotations
 import json
 from typing import Any, Protocol
 
-from .models import RESEARCHING, AgentRunView, BuildType, Candidate, ScoutRun, UserProfile
+from .models import (
+    RESEARCHING,
+    AgentRunView,
+    BuildType,
+    Candidate,
+    ModelCatalogEntry,
+    ScoutRun,
+    UserProfile,
+)
 
 _ROOT = "/api/v1/internal"
 _RUNS = f"{_ROOT}/owner-data/idea_scout_runs"
@@ -46,6 +54,7 @@ _PLUGIN_CONFIG = f"{_ROOT}/plugins/me/config"
 # not the X-Biffo-User-Token this transport forwards. Hence 401, and every run
 # failing at start. Like every other constant here, it must go to Core.
 _BUILD_TYPES = f"{_ROOT}/plugins/idea-scout/build-types"
+_MODEL_CATALOG = f"{_ROOT}/plugins/idea-scout/idea_scout_model_catalog"
 
 
 class CoreHttpError(Exception):
@@ -102,6 +111,7 @@ def _run_from_row(row: dict[str, Any]) -> ScoutRun:
         failure_reason=row.get("failure_reason"),
         created_at=row.get("created_at"),
         deleted=row.get("deleted") or False,
+        research_model=row.get("research_model"),
     )
 
 
@@ -126,6 +136,17 @@ def _build_type_from_row(row: dict[str, Any]) -> BuildType:
         description=row.get("description"),
         active=bool(row.get("active")),
         sort_order=row.get("sort_order"),
+    )
+
+
+def _model_entry_from_row(row: dict[str, Any]) -> ModelCatalogEntry:
+    return ModelCatalogEntry(
+        id=row["id"],
+        model_id=row["model_id"],
+        label=row["label"],
+        active=bool(row.get("active")),
+        is_default=bool(row.get("is_default")),
+        web_capable=bool(row.get("web_capable")),
     )
 
 
@@ -168,6 +189,14 @@ class CoreHttpGateway:
             types, key=lambda t: (t.sort_order if t.sort_order is not None else 0, t.label)
         )
 
+    async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
+        rows = await self._t.request("GET", _MODEL_CATALOG)
+        entries = [_model_entry_from_row(row) for row in rows]
+        if active_only:
+            entries = [e for e in entries if e.active]
+        # Sort by label for consistent ordering in the UI
+        return sorted(entries, key=lambda e: e.label)
+
     async def get_own_config(self, *, role: str) -> dict[str, Any] | None:
         """SigV4-only internal read (this data isn't founder-owned). ``None`` when
         never configured — the caller falls back to the built-in default."""
@@ -189,6 +218,7 @@ class CoreHttpGateway:
         preferences: list[str],
         research_run_ids: list[str],
         chain_id: str,
+        research_model: str | None = None,
     ) -> ScoutRun:
         row = await self._t.request(
             "POST",
@@ -202,6 +232,7 @@ class CoreHttpGateway:
                 "profile_snapshot": json.dumps(profile_snapshot),
                 "preferences": json.dumps(preferences),
                 "deleted": False,
+                "research_model": research_model,
             },
         )
         return _run_from_row(row)

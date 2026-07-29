@@ -299,11 +299,201 @@ def test_deleting_an_unknown_run_is_a_404(client):
 # ── The gate ─────────────────────────────────────────────────────────────────
 
 
+# ── Model catalog (M1) ──────────────────────────────────────────────────────
+
+
+def test_get_models_excludes_inactive_entries(client, core):
+    """Only active models that support web search should be listed."""
+    from idea_scout.models import ModelCatalogEntry
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1",
+            model_id="openai/gpt-4:online",
+            label="GPT-4",
+            active=True,
+            is_default=True,
+            web_capable=True,
+        ),
+        ModelCatalogEntry(
+            id="m2",
+            model_id="anthropic/claude-opus:online",
+            label="Claude Opus",
+            active=True,
+            is_default=False,
+            web_capable=True,
+        ),
+        ModelCatalogEntry(
+            id="m3",
+            model_id="anthropic/claude-sonnet",
+            label="Claude Sonnet",
+            active=True,
+            is_default=False,
+            web_capable=False,
+        ),
+        ModelCatalogEntry(
+            id="m4",
+            model_id="anthropic/claude-haiku:online",
+            label="Claude Haiku",
+            active=False,
+            is_default=False,
+            web_capable=True,
+        ),
+    ]
+
+    resp = client.get("/models")
+    assert resp.status_code == 200
+    models = resp.json()
+    # Should include only active AND web_capable
+    assert len(models) == 2
+    model_ids = {m["model_id"] for m in models}
+    assert model_ids == {
+        "openai/gpt-4:online",
+        "anthropic/claude-opus:online",
+    }
+
+
+def test_get_models_returns_model_details(client, core):
+    """The models endpoint returns enough info for the UI."""
+    from idea_scout.models import ModelCatalogEntry
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1",
+            model_id="openai/gpt-4:online",
+            label="GPT-4",
+            active=True,
+            is_default=True,
+            web_capable=True,
+        ),
+    ]
+
+    resp = client.get("/models")
+    assert resp.status_code == 200
+    models = resp.json()
+    model = models[0]
+    assert model["model_id"] == "openai/gpt-4:online"
+    assert model["label"] == "GPT-4"
+    assert model["is_default"] is True
+
+
+def test_start_run_accepts_research_model_parameter(client, core):
+    """The research_model field can be passed in the start run request."""
+    from idea_scout.models import ModelCatalogEntry
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1",
+            model_id="openai/gpt-4:online",
+            label="GPT-4",
+            active=True,
+            is_default=True,
+            web_capable=True,
+        ),
+    ]
+
+    resp = _start(client, research_model="m1")
+    assert resp.status_code == 201, resp.text
+    run = resp.json()
+    assert run["research_model"] == "m1"
+
+
+def test_start_run_rejects_non_web_capable_model(client, core):
+    """Models without web search cannot be used."""
+    from idea_scout.models import ModelCatalogEntry
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1",
+            model_id="anthropic/claude-sonnet",
+            label="Claude Sonnet",
+            active=True,
+            is_default=False,
+            web_capable=False,
+        ),
+    ]
+
+    resp = _start(client, research_model="m1")
+    assert resp.status_code == 422
+
+
+def test_last_used_model_from_most_recent_run(client, core):
+    """A founder's most recent run's model should be available for pre-selection."""
+    from idea_scout.models import ModelCatalogEntry
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1",
+            model_id="openai/gpt-4:online",
+            label="GPT-4",
+            active=True,
+            is_default=True,
+            web_capable=True,
+        ),
+    ]
+
+    # Start first run without a model
+    resp1 = _start(client)
+    assert resp1.status_code == 201
+
+    # Start second run with a model
+    resp2 = _start(client, research_model="m1")
+    assert resp2.status_code == 201
+
+    # List runs should show the most recent one with the model
+    resp = client.get("/runs")
+    assert resp.status_code == 200
+    runs = resp.json()
+    assert len(runs) > 0
+    # Most recent run should have the model
+    assert runs[0]["research_model"] == "m1"
+
+
+def test_last_used_model_does_not_leak_between_founders(client, core):
+    """One founder's runs should not affect another founder's model suggestions."""
+    from biffo_plugin_sdk import ForwardedUser
+
+    from idea_scout.models import ModelCatalogEntry
+
+    other_owner = "other-founder-sub"
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1",
+            model_id="openai/gpt-4:online",
+            label="GPT-4",
+            active=True,
+            is_default=True,
+            web_capable=True,
+        ),
+    ]
+
+    # First founder creates a run with a model
+    resp1 = _start(client, research_model="m1")
+    assert resp1.status_code == 201
+
+    # Second founder's request should only see their own runs
+    app.dependency_overrides[require_founder] = lambda: ForwardedUser(
+        sub=other_owner, groups=["founder"], token="tok"
+    )
+    client2 = TestClient(app)
+    app.dependency_overrides[get_service] = lambda: IdeaScoutService(
+        core, research_model="research/m", synthesis_model="synthesis/m"
+    )
+
+    resp = client2.get("/runs")
+    assert resp.status_code == 200
+    runs = resp.json()
+    # Other founder should have no runs
+    assert len(runs) == 0
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [
         ("GET", "/build-types"),
         ("GET", "/complexity-levels"),
+        ("GET", "/models"),
         ("POST", "/runs"),
         ("GET", "/runs"),
         ("GET", "/runs/r1"),

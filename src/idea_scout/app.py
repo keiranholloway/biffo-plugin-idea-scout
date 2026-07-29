@@ -38,6 +38,7 @@ from .service import (
     MalformedCandidatesError,
     RunNotFoundError,
     UnknownBuildTypeError,
+    UnknownModelError,
     UnknownPreferenceError,
 )
 from .transport import CoreTransport
@@ -78,6 +79,7 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     UnknownBuildTypeError: 422,
     InvalidComplexityError: 422,
     UnknownPreferenceError: 422,
+    UnknownModelError: 422,
     MalformedCandidatesError: 502,
 }
 
@@ -104,6 +106,9 @@ class StartRunRequest(BaseModel):
     # the service, not here — the same place the build type is checked, so both
     # rejections read the same way.
     preferences: list[str] = Field(default_factory=list, max_length=len(PREFERENCES))
+    # The catalog entry ID the founder chose for research agents. Optional;
+    # when not specified, the admin's configured model or built-in default is used.
+    research_model: str | None = None
 
 
 def _run_state(run: Any) -> dict[str, Any]:
@@ -121,6 +126,7 @@ def _run_state(run: Any) -> dict[str, Any]:
         "created_at": run.created_at,
         "in_flight": run.status in IN_FLIGHT_STATUSES,
         "failure_reason": run.failure_reason,
+        "research_model": run.research_model,
     }
 
 
@@ -143,6 +149,24 @@ async def list_build_types(
     """The active build-type categories, for the run form's picker."""
     types = await svc.list_build_types()
     return [{"key": t.key, "label": t.label, "description": t.description} for t in types]
+
+
+@app.get("/models")
+async def list_models(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> list[dict]:
+    """The active, web-capable models founders can choose for research agents."""
+    models = await svc.list_model_catalog()
+    return [
+        {
+            "id": m.id,
+            "model_id": m.model_id,
+            "label": m.label,
+            "is_default": m.is_default,
+        }
+        for m in models
+    ]
 
 
 @app.get("/preferences")
@@ -188,6 +212,7 @@ async def start_run(
         build_type=body.build_type,
         complexity=body.complexity,
         preferences=body.preferences,
+        research_model=body.research_model,
     )
     return _run_state(run)
 
