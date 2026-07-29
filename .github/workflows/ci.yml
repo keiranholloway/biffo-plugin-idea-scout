@@ -156,7 +156,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-groups
-      - run: uv run pip-audit
+      - run: sh scripts/py-dependency-audit.sh
 
   frontend:
     name: Frontend (lint, types, test, build)
