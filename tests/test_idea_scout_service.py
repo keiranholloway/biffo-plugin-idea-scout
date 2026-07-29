@@ -849,7 +849,7 @@ async def test_builtin_default_used_when_neither_founder_choice_nor_admin_row():
 
 
 async def test_research_model_is_recorded_on_the_run():
-    """The chosen research_model is stored so it can be displayed to the founder."""
+    """The chosen research_model's slug is stored so it can be displayed to the founder."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
     core.model_catalog = _MODEL_CATALOG
 
@@ -860,7 +860,8 @@ async def test_research_model_is_recorded_on_the_run():
         research_model="m2",
     )
 
-    assert run.research_model == "m2"
+    # run.research_model should be the resolved model_id slug, not the catalog entry id
+    assert run.research_model == "anthropic/claude-opus:online"
 
 
 async def test_research_model_none_when_not_specified():

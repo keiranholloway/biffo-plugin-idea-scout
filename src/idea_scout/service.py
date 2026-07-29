@@ -233,14 +233,16 @@ class IdeaScoutService:
         if chosen is None:
             raise UnknownBuildTypeError(build_type)
 
-        # Validate research_model if provided. Must be present, active, and web-capable.
-        chosen_model: str | None = None
+        # Validate and resolve research_model if provided. Must be present, active,
+        # and web-capable. Resolve once here to the model slug, then pass it down
+        # so we don't re-fetch the catalog for each research agent.
+        chosen_model_slug: str | None = None
         if research_model is not None:
             catalog = await self._core.list_model_catalog(active_only=False)
             model_entry = next((e for e in catalog if e.id == research_model), None)
             if model_entry is None or not model_entry.active or not model_entry.web_capable:
                 raise UnknownModelError(research_model)
-            chosen_model = research_model
+            chosen_model_slug = model_entry.model_id
 
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
         previously_suggested = await self._previously_suggested(owner_sub=owner_sub)
@@ -261,7 +263,7 @@ class IdeaScoutService:
         research_run_ids = []
         for agent_name in RESEARCH_AGENT_NAMES:
             instructions, model = await self._resolve_agent(
-                agent_name, self._research_model, chosen_model_id=chosen_model
+                agent_name, self._research_model, chosen_model_slug=chosen_model_slug
             )
             run_id = await self._core.request_agent_run(
                 agent_name=agent_name,
@@ -280,7 +282,7 @@ class IdeaScoutService:
             preferences=chosen_preferences,
             research_run_ids=research_run_ids,
             chain_id=chain_id,
-            research_model=chosen_model,
+            research_model=chosen_model_slug,
         )
 
     # ── Reading a run (and advancing it) ─────────────────────────────────────
@@ -433,14 +435,15 @@ class IdeaScoutService:
         return run
 
     async def _resolve_agent(
-        self, role: str, fallback_model: str, chosen_model_id: str | None = None
+        self, role: str, fallback_model: str, chosen_model_slug: str | None = None
     ) -> tuple[str, str]:
         """The live, admin-editable prompt and model for an agent role, falling
         back to the built-in default when an admin has never configured one.
 
-        For research agents only, the founder's chosen_model_id overrides the
-        model returned from admin config or built-in fallback. Synthesis always
-        uses admin config or built-in, never the founder's choice.
+        For research agents only, the founder's chosen_model_slug (already
+        resolved to the actual model id) overrides the model returned from
+        admin config or built-in fallback. Synthesis always uses admin config
+        or built-in, never the founder's choice.
         """
         config = await self._core.get_own_config(role=role)
         if config:
@@ -449,11 +452,8 @@ class IdeaScoutService:
             instructions, model = DEFAULT_INSTRUCTIONS[role], fallback_model
 
         # For research agents, founder's choice overrides the resolved model
-        if chosen_model_id and role in RESEARCH_AGENT_NAMES:
-            catalog = await self._core.list_model_catalog(active_only=False)
-            model_entry = next((e for e in catalog if e.id == chosen_model_id), None)
-            if model_entry:
-                model = model_entry.model_id
+        if chosen_model_slug and role in RESEARCH_AGENT_NAMES:
+            model = chosen_model_slug
 
         return instructions, model
 

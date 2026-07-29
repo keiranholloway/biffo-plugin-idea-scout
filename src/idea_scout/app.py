@@ -169,6 +169,23 @@ async def list_models(
     ]
 
 
+@app.get("/models/last-used")
+async def get_last_used_model(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict:
+    """The model slug from this founder's most recent run, if any.
+
+    Returns the research_model of the newest run, or None if no run has set one.
+    This is owner-scoped: only this founder's runs are considered.
+    """
+    runs = await svc.list_runs(owner_sub=founder.sub)
+    for run in runs:
+        if run.research_model:
+            return {"research_model": run.research_model}
+    return {"research_model": None}
+
+
 @app.get("/preferences")
 async def list_preferences(
     founder: ForwardedUser = Depends(require_founder),

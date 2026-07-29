@@ -104,7 +104,7 @@
           "name": "research_model",
           "type": "String(200)",
           "nullable": true,
-          "description": "The catalog entry ID the founder chose for research agents. NULL means the admin's configured model or built-in default was used — it is not missing data."
+          "description": "The OpenRouter model slug the research agents ran on (e.g., 'anthropic/claude-opus:online'). NULL means the admin's configured model or built-in default was used — it is not missing data. Stored as the slug (not the catalog entry id) so the run remains explicable if the catalog entry is deleted."
         }
       ],
       "indexes": [

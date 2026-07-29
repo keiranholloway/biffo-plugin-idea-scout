@@ -395,7 +395,8 @@ def test_start_run_accepts_research_model_parameter(client, core):
     resp = _start(client, research_model="m1")
     assert resp.status_code == 201, resp.text
     run = resp.json()
-    assert run["research_model"] == "m1"
+    # Stored as the model_id slug, not the catalog entry id
+    assert run["research_model"] == "openai/gpt-4:online"
 
 
 def test_start_run_rejects_non_web_capable_model(client, core):
@@ -440,13 +441,13 @@ def test_last_used_model_from_most_recent_run(client, core):
     resp2 = _start(client, research_model="m1")
     assert resp2.status_code == 201
 
-    # List runs should show the most recent one with the model
+    # List runs should show the most recent one with the model slug
     resp = client.get("/runs")
     assert resp.status_code == 200
     runs = resp.json()
     assert len(runs) > 0
-    # Most recent run should have the model
-    assert runs[0]["research_model"] == "m1"
+    # Most recent run should have the model slug (m1 -> openai/gpt-4:online)
+    assert runs[0]["research_model"] == "openai/gpt-4:online"
 
 
 def test_last_used_model_does_not_leak_between_founders(client, core):
@@ -494,6 +495,7 @@ def test_last_used_model_does_not_leak_between_founders(client, core):
         ("GET", "/build-types"),
         ("GET", "/complexity-levels"),
         ("GET", "/models"),
+        ("GET", "/models/last-used"),
         ("POST", "/runs"),
         ("GET", "/runs"),
         ("GET", "/runs/r1"),
