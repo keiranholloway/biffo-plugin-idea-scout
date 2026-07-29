@@ -19,6 +19,7 @@ why the sidebar's ``GET /runs`` deliberately does not advance anything.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -28,7 +29,7 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from .adapter import CoreHttpGateway
+from .adapter import CoreHttpError, CoreHttpGateway
 from .definitions import (
     DEFAULT_RESEARCH_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
@@ -36,9 +37,11 @@ from .definitions import (
     MIN_COMPLEXITY,
     PREFERENCES,
     complexity_label,
+    seed_config_payloads,
 )
 from .models import IN_FLIGHT_STATUSES
 from .service import (
+    AgentConfigMissingError,
     IdeaScoutError,
     IdeaScoutService,
     InvalidComplexityError,
@@ -63,6 +66,8 @@ _SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESI
 #: The verified user carries its raw token, forwarded to Core by the transport.
 require_founder = require_group("founder")
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def get_service(founder: ForwardedUser = Depends(require_founder)) -> IdeaScoutService:
     """One :class:`IdeaScoutService` per request, bound to Core over a transport
@@ -77,6 +82,34 @@ def get_service(founder: ForwardedUser = Depends(require_founder)) -> IdeaScoutS
 
 app = FastAPI(title="Idea Scout", docs_url=None, redoc_url=None)
 
+
+@app.on_event("startup")
+async def _seed_agent_config() -> None:
+    """Seed the agent config on startup, tolerating Core transient failures.
+
+    Seeding guarantees rows exist so _resolve_agent can fail loudly on a missing
+    row rather than silently using the fallback. If Core is briefly unavailable
+    at cold start, the plugin continues anyway — the absence will fail loudly when
+    a founder tries to run.
+    """
+    try:
+        transport = CoreTransport(founder_token="")
+        gateway = CoreHttpGateway(transport)
+        payload = seed_config_payloads(
+            research_model=_RESEARCH_MODEL, synthesis_model=_SYNTHESIS_MODEL
+        )
+        result = await gateway.seed_own_config(config=payload)
+        created = sum(1 for r in result if r.get("created"))
+        already_present = len(result) - created
+        _LOGGER.info(f"Seeded {created} new agent config row(s); {already_present} already present")
+    except CoreHttpError as exc:
+        _LOGGER.exception(
+            "Failed to seed agent config at startup (Core may be unavailable). "
+            "Agent runs will fail loudly when started: %s",
+            exc,
+        )
+
+
 # Orchestration errors -> HTTP. Registered once for the base class; the map keys
 # on the concrete type. Anything unmapped is a 400 (a bad request the founder
 # can fix). Note there is no mapping for an agent failing: that is a *run state*
@@ -88,6 +121,7 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     UnknownPreferenceError: 422,
     UnknownModelError: 422,
     MalformedCandidatesError: 502,
+    AgentConfigMissingError: 502,
 }
 
 

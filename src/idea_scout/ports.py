@@ -48,6 +48,16 @@ class CoreGateway(Protocol):
         which case the caller falls back to the built-in default."""
         ...
 
+    async def seed_own_config(self, *, config: list[dict[str, Any]]) -> list[dict[str, bool]]:
+        """Seed the admin-editable config for this plugin's agent roles.
+
+        Sends a list of role definitions (agent_key, agent_name, role, system_prompt,
+        model, required_group, and optional fields). Returns a list of
+        ``{"role": str, "created": bool}`` — one per definition — indicating which
+        rows were newly created. Insert-if-absent and never overwrites an existing
+        row, so calling on every startup is safe and idempotent."""
+        ...
+
     # ── Runs ─────────────────────────────────────────────────────────────────
 
     async def create_run(

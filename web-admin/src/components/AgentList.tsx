@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { ChatAgent } from '../lib/api'
 
 type Row =
-  | { kind: 'stored'; agent: ChatAgent; isSynthesis: boolean }
+  | { kind: 'stored'; agent: ChatAgent }
   | { kind: 'builtin'; agent: ChatAgent }
 
 function mergeAgentRows(storedAgents: ChatAgent[], builtinAgents: ChatAgent[]): Row[] {
@@ -14,7 +14,6 @@ function mergeAgentRows(storedAgents: ChatAgent[], builtinAgents: ChatAgent[]): 
       (agent): Row => ({
         kind: 'stored',
         agent,
-        isSynthesis: agent.agent_key === 'idea-scout-synthesis',
       }),
     ),
     // Then built-ins with no stored row
@@ -116,14 +115,6 @@ export function AgentList({
             <div key={row.agent.agent_key} className="admin-list-item">
               {editingKey === row.agent.agent_key ? (
                 <div className="admin-edit-form">
-                  {row.isSynthesis && (
-                    <div className="admin-synthesis-warning">
-                      <strong>⚠ Not live-editable:</strong> This agent&apos;s prompt and model are
-                      read from the orchestration workflow, not from this row. Editing here will
-                      save but will not change what runs. The workflow definition is the live copy.
-                    </div>
-                  )}
-
                   <label>
                     Name:
                     <input
@@ -189,21 +180,9 @@ export function AgentList({
                 <>
                   <div className="admin-list-content">
                     <h3>{row.agent.agent_name}</h3>
-                    {row.isSynthesis && (
-                      <div className="admin-synthesis-warning">
-                        <strong>⚠ Not live-editable:</strong> This agent&apos;s prompt and model
-                        are read from the orchestration workflow, not from this row. Editing here
-                        will save but will not change what runs. The workflow definition is the
-                        live copy.
-                      </div>
-                    )}
                     <p>
                       <strong>Source:</strong>{' '}
-                      <span className="badge-stored">
-                        {row.isSynthesis
-                          ? 'Stored — overrides the built-in default'
-                          : 'Stored'}
-                      </span>
+                      <span className="badge-stored">Stored</span>
                     </p>
                     <p>
                       <strong>Key:</strong> {row.agent.agent_key}
