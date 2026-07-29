@@ -67,6 +67,18 @@ class BuildType:
 
 
 @dataclass(frozen=True)
+class ModelCatalogEntry:
+    """An admin-configured model that founders can choose for research agents."""
+
+    id: str
+    model_id: str
+    label: str
+    active: bool = False
+    is_default: bool = False
+    web_capable: bool = False
+
+
+@dataclass(frozen=True)
 class ScoutRun:
     """One Idea Scout run — one founder asking for ideas once."""
 
@@ -87,6 +99,9 @@ class ScoutRun:
     failure_reason: str | None = None
     created_at: str | None = None
     deleted: bool = False
+    #: The catalog entry ID the founder chose for research models, or None if
+    #: the admin's configured default was used instead.
+    research_model: str | None = None
 
 
 @dataclass(frozen=True)

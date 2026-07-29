@@ -44,7 +44,7 @@ EXPECTED_CAPABILITIES = {
 }
 
 OWNER_SCOPED_TABLES = {"idea_scout_runs", "idea_scout_candidates"}
-ADMIN_MANAGED_TABLES = {"idea_scout_build_types"}
+ADMIN_MANAGED_TABLES = {"idea_scout_build_types", "idea_scout_model_catalog"}
 
 
 def _raw() -> dict:
