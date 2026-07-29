@@ -15,6 +15,7 @@ const createBuildType = vi.fn()
 const updateBuildType = vi.fn()
 const removeBuildType = vi.fn()
 const listChatAgents = vi.fn()
+const createChatAgent = vi.fn()
 const updateChatAgent = vi.fn()
 const deleteChatAgent = vi.fn()
 const listModelCatalog = vi.fn()
@@ -37,6 +38,7 @@ vi.mock('./lib/api', async (importOriginal) => {
       update: updateBuildType,
       remove: removeBuildType,
       listChatAgents,
+      createChatAgent,
       updateChatAgent,
       deleteChatAgent,
       listModelCatalog,
@@ -59,9 +61,9 @@ const MICRO_SAAS = {
 }
 
 const RESEARCH_AGENT = {
-  agent_key: 'research-community',
-  agent_name: 'research-community',
-  role: 'research-community',
+  agent_key: 'idea-scout-community',
+  agent_name: 'idea-scout-community',
+  role: 'idea-scout-community',
   system_prompt: 'Research communities...',
   model: 'anthropic/claude-sonnet-4',
   required_group: 'founder',
@@ -109,6 +111,7 @@ describe('Idea Scout admin panel', () => {
     updateBuildType.mockReset().mockResolvedValue(MICRO_SAAS)
     removeBuildType.mockReset()
     listChatAgents.mockReset().mockResolvedValue([RESEARCH_AGENT, SYNTHESIS_AGENT])
+    createChatAgent.mockReset().mockResolvedValue(RESEARCH_AGENT)
     updateChatAgent.mockReset().mockResolvedValue(RESEARCH_AGENT)
     deleteChatAgent.mockReset()
     listModelCatalog.mockReset().mockResolvedValue([MODEL_WEB_CAPABLE, MODEL_NOT_WEB_CAPABLE])
@@ -244,7 +247,7 @@ describe('Idea Scout admin panel', () => {
       await waitFor(() => {
         expect(updateChatAgent).toHaveBeenCalled()
         const call = updateChatAgent.mock.calls[0]
-        expect(call[0]).toBe('research-community')
+        expect(call[0]).toBe('idea-scout-community')
         expect(call[1].system_prompt).toBe('Updated prompt content')
       })
     })

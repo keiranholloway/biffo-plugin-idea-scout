@@ -163,6 +163,39 @@ export default function App() {
     }
   }
 
+  async function storeBuiltinAgent(agent: ChatAgent) {
+    if (
+      !window.confirm(
+        `Store "${agent.agent_key}" as an editable row?\n\n` +
+          'It copies the built-in default exactly, so nothing changes now. ' +
+          'From then on the stored row is what runs, and every edit you make ' +
+          'here overrides the built-in default.',
+      )
+    )
+      return
+    setBusy(true)
+    try {
+      // Create a stored copy of the built-in agent
+      const payload = {
+        agent_name: agent.agent_name,
+        role: agent.role,
+        system_prompt: agent.system_prompt,
+        model: agent.model,
+        required_group: agent.required_group,
+        active: agent.active,
+        max_history_messages: agent.max_history_messages,
+        max_output_tokens: agent.max_output_tokens,
+        timeout_seconds: agent.timeout_seconds,
+      }
+      await api.createChatAgent(payload)
+      await refreshAgents()
+    } catch (err) {
+      setError(`Failed to store default: ${errorText(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function createModel(entry: Omit<ModelCatalogEntry, 'id'>) {
     setBusy(true)
     try {
@@ -286,7 +319,13 @@ export default function App() {
                 Admin-editable prompts and models for the four agent roles that run the research
                 and synthesis.
               </p>
-              <AgentList agents={agents} onUpdate={updateAgent} onDelete={deleteAgent} busy={busy} />
+              <AgentList
+                agents={agents}
+                onUpdate={updateAgent}
+                onDelete={deleteAgent}
+                onStoreBuiltin={storeBuiltinAgent}
+                busy={busy}
+              />
             </section>
           )}
 

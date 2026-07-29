@@ -536,3 +536,49 @@ button:disabled {
   color: #664d03;
   line-height: 1.5;
 }
+
+/* ── admin note (informational message) ──────────────────────────────────── */
+
+.admin-note {
+  color: var(--text-muted, #5b6070);
+  background: #fff8e6;
+  border-left: 3px solid #ffc107;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* ── built-in agent row styling ──────────────────────────────────────────── */
+
+.admin-list-item--builtin {
+  border-left: 3px solid #ffc107;
+  opacity: 0.85;
+}
+
+/* ── badges for agent source ─────────────────────────────────────────────── */
+
+.badge-builtin {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: #fff3cd;
+  color: #664d03;
+}
+
+.badge-stored {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  background: var(--state-positive-soft, #e6f4ee);
+  color: var(--state-positive, #1f6b4d);
+}
