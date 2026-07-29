@@ -121,6 +121,15 @@ class CoreGateway(Protocol):
         forwarded token, so candidates are owner-scoped like their run."""
         ...
 
+    async def list_owner_candidates(self, *, owner_sub: str) -> list[Candidate]:
+        """Every candidate this founder has ever been shown, across all runs.
+
+        Owner-scoped by Core from the forwarded token, exactly like the
+        per-run read below. Used to tell the agents which ground is already
+        covered (#49) — the first read in this plugin that crosses runs.
+        """
+        ...
+
     async def list_candidates(self, *, owner_sub: str, run_id: str) -> list[Candidate]:
         """This run's stored candidates, ascending by rank."""
         ...

@@ -319,6 +319,12 @@ class FakeCoreGateway:
                 )
             )
 
+    async def list_owner_candidates(self, *, owner_sub: str) -> list[Candidate]:
+        # Ownership is reached through the candidate's run, which is what the
+        # real owner-data route enforces from the forwarded token.
+        owned = {r.id for r in self.runs.values() if r.owner_sub == owner_sub}
+        return [c for c in self.candidates if c.run_id in owned]
+
     async def list_candidates(self, *, owner_sub: str, run_id: str) -> list[Candidate]:
         run = self.runs.get(run_id)
         if run is None or run.owner_sub != owner_sub:

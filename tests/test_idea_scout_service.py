@@ -19,9 +19,10 @@ from fakes import (
 from idea_scout import models as m
 from idea_scout.definitions import (
     MAX_CANDIDATES,
+    MAX_PREVIOUSLY_SUGGESTED,
     RESEARCH_AGENT_NAMES,
 )
-from idea_scout.models import BuildType, UserProfile
+from idea_scout.models import BuildType, Candidate, ScoutRun, UserProfile
 from idea_scout.service import (
     IdeaScoutService,
     InvalidComplexityError,
@@ -92,6 +93,94 @@ async def test_the_brief_carries_the_profile_the_build_type_and_the_complexity()
     assert brief["profile"]["focus_areas"] == ["fintech"]
     # The slider position is briefed in words — "2 out of 5" means nothing to a model.
     assert "small" in brief["complexity"]
+
+
+_BUILD_TYPE = BuildType(
+    id="bt1", key="micro-saas", label="MicroSaaS", description="One narrow job.", active=True
+)
+
+
+def _past_run(core: FakeCoreGateway, run_id: str, owner_sub: str, *, created_at: str) -> None:
+    """A finished run of someone's, so its candidates are reachable and owned.
+
+    Ownership of a candidate is reached through its run — that is what the real
+    owner-data route enforces via the forwarded token, and what the fake mirrors.
+    """
+    core.runs[run_id] = ScoutRun(
+        id=run_id,
+        owner_sub=owner_sub,
+        build_type="micro-saas",
+        complexity=3,
+        chain_id=f"chain-{run_id}",
+        status="complete",
+        created_at=created_at,
+    )
+
+
+async def test_the_brief_carries_titles_the_founder_has_already_been_shown():
+    """A founder running twice must not be shown the same ideas twice (#49).
+
+    The history was always in `idea_scout_candidates` and never read back, so
+    nothing told the agents which ground was already covered.
+    """
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    _past_run(core, "r1", OWNER, created_at="2026-07-01T00:00:00Z")
+    core.candidates += [
+        Candidate(id="c1", run_id="r1", rank=1, title="Invoice chaser for clinics", pitch="p"),
+        Candidate(id="c2", run_id="r1", rank=2, title="Rota planner for locums", pitch="p"),
+    ]
+
+    await _start(core)
+
+    brief = core.requested[0]["input_payload"]["brief"]
+    assert "Invoice chaser for clinics" in brief["previously_suggested"]
+    assert "Rota planner for locums" in brief["previously_suggested"]
+
+
+async def test_the_previously_suggested_key_is_omitted_when_there_is_no_history():
+    """Same reason an empty profile is omitted: an empty list invites the model
+    to reason about a set that does not exist."""
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+
+    await _start(core)
+
+    assert "previously_suggested" not in core.requested[0]["input_payload"]["brief"]
+
+
+async def test_only_the_requesting_founders_own_titles_reach_the_brief():
+    """The first read that crosses runs, so owner scoping is asserted rather
+    than assumed from the transport."""
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    _past_run(core, "mine", OWNER, created_at="2026-07-01T00:00:00Z")
+    _past_run(core, "theirs", OTHER, created_at="2026-07-02T00:00:00Z")
+    core.candidates += [
+        Candidate(id="c1", run_id="mine", rank=1, title="Mine", pitch="p"),
+        Candidate(id="c2", run_id="theirs", rank=1, title="Theirs", pitch="p"),
+    ]
+
+    await _start(core)
+
+    suggested = core.requested[0]["input_payload"]["brief"]["previously_suggested"]
+    assert "Mine" in suggested
+    assert "Theirs" not in suggested
+
+
+async def test_the_history_is_capped_and_keeps_the_most_recent():
+    """An unbounded history eventually dominates the prompt."""
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    _past_run(core, "old", OWNER, created_at="2026-07-01T00:00:00Z")
+    _past_run(core, "new", OWNER, created_at="2026-07-09T00:00:00Z")
+    core.candidates += [
+        Candidate(id=f"o{i}", run_id="old", rank=i, title=f"Old idea {i}", pitch="p")
+        for i in range(MAX_PREVIOUSLY_SUGGESTED)
+    ]
+    core.candidates += [Candidate(id="n1", run_id="new", rank=1, title="Newest idea", pitch="p")]
+
+    await _start(core)
+
+    suggested = core.requested[0]["input_payload"]["brief"]["previously_suggested"]
+    assert len(suggested) == MAX_PREVIOUSLY_SUGGESTED
+    assert "Newest idea" in suggested, "the cap dropped the most recent instead of the oldest"
 
 
 async def test_an_empty_profile_is_omitted_from_the_brief_rather_than_sent_as_nulls():
