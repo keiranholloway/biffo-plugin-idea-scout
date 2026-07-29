@@ -1,7 +1,6 @@
 """Idea Scout's admin-facing ASGI app (ADR-0021 ``admin_ingress``).
 
-**This app serves the built admin UI and nothing else.** It deliberately has no
-API routes, and that is the whole design:
+**This app serves the built admin UI and built-in configuration data.**
 
 ``idea_scout_build_types`` already declares its five CRUD routes in
 ``biffo.plugin.json``'s ``api_routes``, so **Core** generates them and the plugin
@@ -9,11 +8,17 @@ host forwards them (biffo-template#684), authorised by the table's own
 admin-only permissions. The UI calls
 ``/api/v1/plugins/idea-scout/build-types`` directly — one hop.
 
-The previous version of this file proxied those same routes through here with
+``/api/v1/admin/plugins/idea-scout/builtin-agents`` is served from here because
+it returns static configuration (DEFAULT_INSTRUCTIONS, built-in models) that
+the UI merges with stored rows to show a complete view — which prompts are code-defined
+and which have been promoted to the database. This pattern follows ideation's
+``builtin_chat_agents()`` endpoint and is necessary for the "Store a copy to edit"
+button to write the real prompt rather than a placeholder.
+
+The previous version of this file proxied CRUD routes through here with
 ``httpx``. Ideation documented what that costs: the host calls itself and then
 forwards to Core — three hops, and a 500 when they outran the client's timeout
-(biffo-template#652). There is no reason to pay that for routes Core already
-serves.
+(biffo-template#652). We avoid that by calling Core's declared routes directly.
 
 Reinstated after biffo-plugin-idea-scout#22, which removed the previous
 declaration because it promised a UI that did not exist. Both defects that issue
@@ -29,6 +34,14 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+
+from idea_scout.definitions import (
+    COMMUNITY_AGENT_NAME,
+    COMPETITIVE_AGENT_NAME,
+    DEFAULT_INSTRUCTIONS,
+    NARRATIVE_AGENT_NAME,
+    SYNTHESIS_AGENT_NAME,
+)
 
 app = FastAPI(title="Idea Scout Admin", docs_url=None, redoc_url=None)
 
@@ -72,3 +85,68 @@ def _resolve_static_dir(plugins_root: str | None) -> Path:
 _STATIC_DIR = _resolve_static_dir(os.environ.get("BIFFO_PLUGINS_ROOT"))
 if _STATIC_DIR.is_dir():  # pragma: no cover — depends on a build having run
     app.mount("/", StaticFiles(directory=str(_STATIC_DIR), html=True), name="admin-ui")
+
+
+@app.get("/api/v1/admin/plugins/idea-scout/builtin-agents")
+def builtin_agents() -> dict:
+    """The four code-defined agent roles with their real prompts.
+
+    The UI merges these with stored rows to show the complete picture: which
+    prompts are still defined in code and which have been promoted to the
+    database. The "Store a copy to edit" button writes the real prompt from here,
+    not a placeholder.
+
+    Ported from ideation's equivalent endpoint (builtin_chat_agents).
+    """
+    return {
+        "agents": [
+            {
+                "agent_key": COMMUNITY_AGENT_NAME,
+                "agent_name": COMMUNITY_AGENT_NAME,
+                "role": COMMUNITY_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[COMMUNITY_AGENT_NAME],
+                "model": "anthropic/claude-sonnet-4",
+                "required_group": "founder",
+                "active": True,
+                "max_history_messages": 10,
+                "max_output_tokens": 2000,
+                "timeout_seconds": 30,
+            },
+            {
+                "agent_key": NARRATIVE_AGENT_NAME,
+                "agent_name": NARRATIVE_AGENT_NAME,
+                "role": NARRATIVE_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[NARRATIVE_AGENT_NAME],
+                "model": "anthropic/claude-sonnet-4",
+                "required_group": "founder",
+                "active": True,
+                "max_history_messages": 10,
+                "max_output_tokens": 2000,
+                "timeout_seconds": 30,
+            },
+            {
+                "agent_key": COMPETITIVE_AGENT_NAME,
+                "agent_name": COMPETITIVE_AGENT_NAME,
+                "role": COMPETITIVE_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[COMPETITIVE_AGENT_NAME],
+                "model": "anthropic/claude-sonnet-4",
+                "required_group": "founder",
+                "active": True,
+                "max_history_messages": 10,
+                "max_output_tokens": 2000,
+                "timeout_seconds": 30,
+            },
+            {
+                "agent_key": SYNTHESIS_AGENT_NAME,
+                "agent_name": SYNTHESIS_AGENT_NAME,
+                "role": SYNTHESIS_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME],
+                "model": "anthropic/claude-opus-4-8",
+                "required_group": "founder",
+                "active": True,
+                "max_history_messages": 10,
+                "max_output_tokens": 2000,
+                "timeout_seconds": 30,
+            },
+        ]
+    }

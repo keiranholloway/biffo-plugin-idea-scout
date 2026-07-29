@@ -103,6 +103,8 @@ export function createApi(token: () => string | null) {
 
     // Chat agents
     listChatAgents: () => request<ChatAgent[]>(token, 'GET', '/chat-agents', undefined, AGENTS_BASE),
+    getBuiltinAgents: () =>
+      request<{ agents: ChatAgent[] }>(token, 'GET', '/builtin-agents', undefined, AGENTS_BASE),
     createChatAgent: (agent: Omit<ChatAgent, 'agent_key'>) =>
       request<ChatAgent>(token, 'POST', '/chat-agents', agent, AGENTS_BASE),
     updateChatAgent: (agentKey: string, updates: Partial<ChatAgent>) =>

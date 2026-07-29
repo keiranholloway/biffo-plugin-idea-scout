@@ -15,6 +15,7 @@ const createBuildType = vi.fn()
 const updateBuildType = vi.fn()
 const removeBuildType = vi.fn()
 const listChatAgents = vi.fn()
+const getBuiltinAgents = vi.fn()
 const createChatAgent = vi.fn()
 const updateChatAgent = vi.fn()
 const deleteChatAgent = vi.fn()
@@ -38,6 +39,7 @@ vi.mock('./lib/api', async (importOriginal) => {
       update: updateBuildType,
       remove: removeBuildType,
       listChatAgents,
+      getBuiltinAgents,
       createChatAgent,
       updateChatAgent,
       deleteChatAgent,
@@ -86,6 +88,60 @@ const SYNTHESIS_AGENT = {
   timeout_seconds: 30,
 }
 
+const BUILTIN_COMMUNITY_AGENT = {
+  agent_key: 'idea-scout-community',
+  agent_name: 'idea-scout-community',
+  role: 'idea-scout-community',
+  system_prompt:
+    'You are Idea Scout\'s community-signal researcher. Your angle is what people are actually complaining about, asking for, and hacking around in public — forums, Q&A sites, review threads, discussion boards, issue trackers, subreddits.',
+  model: 'anthropic/claude-sonnet-4',
+  required_group: 'founder',
+  active: true,
+  max_history_messages: 10,
+  max_output_tokens: 2000,
+  timeout_seconds: 30,
+}
+
+const BUILTIN_NARRATIVE_AGENT = {
+  agent_key: 'idea-scout-narrative',
+  agent_name: 'idea-scout-narrative',
+  role: 'idea-scout-narrative',
+  system_prompt:
+    'You are Idea Scout\'s narrative researcher. Your angle is what operators and founders say is changing in markets.',
+  model: 'anthropic/claude-sonnet-4',
+  required_group: 'founder',
+  active: true,
+  max_history_messages: 10,
+  max_output_tokens: 2000,
+  timeout_seconds: 30,
+}
+
+const BUILTIN_COMPETITIVE_AGENT = {
+  agent_key: 'idea-scout-competitive',
+  agent_name: 'idea-scout-competitive',
+  role: 'idea-scout-competitive',
+  system_prompt: 'You are Idea Scout\'s competitive researcher. Your angle is gaps and weaknesses.',
+  model: 'anthropic/claude-sonnet-4',
+  required_group: 'founder',
+  active: true,
+  max_history_messages: 10,
+  max_output_tokens: 2000,
+  timeout_seconds: 30,
+}
+
+const BUILTIN_SYNTHESIS_AGENT = {
+  agent_key: 'idea-scout-synthesis',
+  agent_name: 'idea-scout-synthesis',
+  role: 'idea-scout-synthesis',
+  system_prompt: 'You are Idea Scout\'s synthesis agent. Reconcile three research angles.',
+  model: 'anthropic/claude-opus-4-8',
+  required_group: 'founder',
+  active: true,
+  max_history_messages: 10,
+  max_output_tokens: 2000,
+  timeout_seconds: 30,
+}
+
 const MODEL_WEB_CAPABLE = {
   id: 'model1',
   model_id: 'anthropic/claude-opus:online',
@@ -111,6 +167,9 @@ describe('Idea Scout admin panel', () => {
     updateBuildType.mockReset().mockResolvedValue(MICRO_SAAS)
     removeBuildType.mockReset()
     listChatAgents.mockReset().mockResolvedValue([RESEARCH_AGENT, SYNTHESIS_AGENT])
+    getBuiltinAgents.mockReset().mockResolvedValue({
+      agents: [BUILTIN_COMMUNITY_AGENT, BUILTIN_NARRATIVE_AGENT, BUILTIN_COMPETITIVE_AGENT, BUILTIN_SYNTHESIS_AGENT],
+    })
     createChatAgent.mockReset().mockResolvedValue(RESEARCH_AGENT)
     updateChatAgent.mockReset().mockResolvedValue(RESEARCH_AGENT)
     deleteChatAgent.mockReset()
@@ -283,6 +342,61 @@ describe('Idea Scout admin panel', () => {
           const warningInRow = agentRow.querySelector('.admin-synthesis-warning')
           expect(warningInRow).toBeFalsy()
         }
+      })
+    })
+
+    it('shows real built-in prompts, not placeholder text', async () => {
+      // Start with no stored agents so built-ins display
+      listChatAgents.mockResolvedValue([])
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      await user.click(agentsTab)
+
+      await waitFor(() => {
+        // Check for real prompt content from the built-in agents
+        expect(
+          screen.getByText(/You are Idea Scout's community-signal researcher/),
+        ).toBeTruthy()
+      })
+
+      // Verify no placeholder text appears anywhere on the page
+      expect(screen.queryByText(/Built-in prompt — stored row not found/)).toBeNull()
+      expect(screen.queryByText(/\(Built-in default\)/)).toBeNull()
+    })
+
+    it('promotes a built-in with real prompt content', async () => {
+      // Start with no stored agents so built-ins display
+      listChatAgents.mockResolvedValue([])
+
+      // Mock the confirmation dialog
+      vi.stubGlobal('confirm', () => true)
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      await user.click(agentsTab)
+
+      // Find the "Store a copy to edit" button for the first built-in
+      const storeButtons = await screen.findAllByRole('button', {
+        name: /Store a copy to edit/i,
+      })
+      expect(storeButtons.length).toBeGreaterThan(0)
+
+      // Click the store button
+      await user.click(storeButtons[0])
+
+      // Verify createChatAgent was called with real prompt content
+      await waitFor(() => {
+        expect(createChatAgent).toHaveBeenCalled()
+        const call = createChatAgent.mock.calls[0]
+        expect(call[0]).toBeDefined()
+        // Verify the real prompt is passed, not a placeholder
+        expect(call[0].system_prompt).toContain('You are Idea Scout')
+        expect(call[0].system_prompt).not.toContain('Built-in prompt — stored row not found')
       })
     })
   })

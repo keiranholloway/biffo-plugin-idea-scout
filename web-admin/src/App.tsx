@@ -41,6 +41,7 @@ export default function App() {
 
   // Agents state
   const [agents, setAgents] = useState<ChatAgent[]>([])
+  const [builtinAgents, setBuiltinAgents] = useState<ChatAgent[]>([])
 
   // Models state
   const [models, setModels] = useState<ModelCatalogEntry[]>([])
@@ -97,13 +98,24 @@ export default function App() {
     }
   }, [idToken])
 
+  const refreshBuiltinAgents = useCallback(async () => {
+    try {
+      const result = await api.getBuiltinAgents()
+      setBuiltinAgents(result.agents)
+      setError(null)
+    } catch (err) {
+      setError(`Failed to load built-in agents: ${errorText(err)}`)
+    }
+  }, [idToken])
+
   useEffect(() => {
     if (idToken == null) return
     void refreshBuildTypes()
     void refreshAgents()
+    void refreshBuiltinAgents()
     void refreshModels()
     setLoaded(true)
-  }, [idToken, refreshBuildTypes, refreshAgents, refreshModels])
+  }, [idToken, refreshBuildTypes, refreshAgents, refreshBuiltinAgents, refreshModels])
 
   async function saveBuildType(draft: BuildTypeDraft) {
     setBusy(true)
@@ -321,6 +333,7 @@ export default function App() {
               </p>
               <AgentList
                 agents={agents}
+                builtinAgents={builtinAgents}
                 onUpdate={updateAgent}
                 onDelete={deleteAgent}
                 onStoreBuiltin={storeBuiltinAgent}

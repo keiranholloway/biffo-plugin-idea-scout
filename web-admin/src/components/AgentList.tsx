@@ -1,76 +1,16 @@
 import { useState } from 'react'
 import type { ChatAgent } from '../lib/api'
 
-/**
- * Built-in agent definitions from src/idea_scout/definitions.py. These are the
- * code-defined prompts; the UI merges them with stored rows to show which prompts
- * are still trapped in code and offers "Store a copy to edit" to promote them.
- *
- * TODO: fetch these from the server (e.g., an /effective-config endpoint like
- * ideation's builtin_chat_agents()). Hard-coding here is a temporary pattern that
- * breaks silently if the backend list ever changes.
- */
-const BUILTIN_AGENTS: ChatAgent[] = [
-  {
-    agent_key: 'idea-scout-community',
-    agent_name: 'idea-scout-community',
-    role: 'idea-scout-community',
-    system_prompt: '(Built-in prompt — stored row not found)',
-    model: '(Built-in default)',
-    required_group: 'founder',
-    active: true,
-    max_history_messages: 10,
-    max_output_tokens: 2000,
-    timeout_seconds: 30,
-  },
-  {
-    agent_key: 'idea-scout-narrative',
-    agent_name: 'idea-scout-narrative',
-    role: 'idea-scout-narrative',
-    system_prompt: '(Built-in prompt — stored row not found)',
-    model: '(Built-in default)',
-    required_group: 'founder',
-    active: true,
-    max_history_messages: 10,
-    max_output_tokens: 2000,
-    timeout_seconds: 30,
-  },
-  {
-    agent_key: 'idea-scout-competitive',
-    agent_name: 'idea-scout-competitive',
-    role: 'idea-scout-competitive',
-    system_prompt: '(Built-in prompt — stored row not found)',
-    model: '(Built-in default)',
-    required_group: 'founder',
-    active: true,
-    max_history_messages: 10,
-    max_output_tokens: 2000,
-    timeout_seconds: 30,
-  },
-  {
-    agent_key: 'idea-scout-synthesis',
-    agent_name: 'idea-scout-synthesis',
-    role: 'idea-scout-synthesis',
-    system_prompt: '(Built-in prompt — stored row not found)',
-    model: '(Built-in default)',
-    required_group: 'founder',
-    active: true,
-    max_history_messages: 10,
-    max_output_tokens: 2000,
-    timeout_seconds: 30,
-  },
-]
-
 type Row =
   | { kind: 'stored'; agent: ChatAgent; isSynthesis: boolean }
   | { kind: 'builtin'; agent: ChatAgent }
 
-function mergeAgentRows(agents: ChatAgent[]): Row[] {
-  const storedKeys = new Set(agents.map((a) => a.agent_key))
+function mergeAgentRows(storedAgents: ChatAgent[], builtinAgents: ChatAgent[]): Row[] {
+  const storedKeys = new Set(storedAgents.map((a) => a.agent_key))
 
   return [
     // Stored rows first
-    ...agents.map(
+    ...storedAgents.map(
       (agent): Row => ({
         kind: 'stored',
         agent,
@@ -78,7 +18,7 @@ function mergeAgentRows(agents: ChatAgent[]): Row[] {
       }),
     ),
     // Then built-ins with no stored row
-    ...BUILTIN_AGENTS.filter((b) => !storedKeys.has(b.agent_key)).map(
+    ...builtinAgents.filter((b) => !storedKeys.has(b.agent_key)).map(
       (agent): Row => ({
         kind: 'builtin',
         agent,
@@ -89,13 +29,21 @@ function mergeAgentRows(agents: ChatAgent[]): Row[] {
 
 interface AgentListProps {
   agents: ChatAgent[]
+  builtinAgents: ChatAgent[]
   onUpdate: (key: string, updates: Partial<ChatAgent>) => void
   onDelete: (key: string) => void
   onStoreBuiltin: (agent: ChatAgent) => void
   busy: boolean
 }
 
-export function AgentList({ agents, onUpdate, onDelete, onStoreBuiltin, busy }: AgentListProps) {
+export function AgentList({
+  agents,
+  builtinAgents,
+  onUpdate,
+  onDelete,
+  onStoreBuiltin,
+  busy,
+}: AgentListProps) {
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<ChatAgent>>({})
 
@@ -116,7 +64,7 @@ export function AgentList({ agents, onUpdate, onDelete, onStoreBuiltin, busy }: 
     setEditForm({})
   }
 
-  const rows = mergeAgentRows(agents)
+  const rows = mergeAgentRows(agents, builtinAgents)
 
   if (rows.length === 0) {
     return <p className="admin-empty">No agents stored, and no built-in defaults reported.</p>
@@ -150,7 +98,7 @@ export function AgentList({ agents, onUpdate, onDelete, onStoreBuiltin, busy }: 
                 <details>
                   <summary>System prompt (built-in)</summary>
                   <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
-                    Click "Store a copy to edit" to promote this prompt into the database.
+                    {row.agent.system_prompt}
                   </pre>
                 </details>
               </div>
