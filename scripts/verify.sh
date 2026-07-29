@@ -77,10 +77,77 @@ SKIPPED=""
 PYTEST="${BIFFO_VERIFY_PYTEST:-}"
 
 have_script() {
-  [ -f package.json ] || return 1
+  [ -f "$2/package.json" ] || return 1
   # grep rather than node: --list must work on a machine with no toolchain at
   # all, because what it reports is a property of the repo, not of the machine.
-  grep -qE "^[[:space:]]*\"$1\"[[:space:]]*:" package.json
+  # Deliberately NOT anchored to line start: that only matches a pretty-printed
+  # package.json, and a minified one would silently report "no lint script" --
+  # a skip that looks like a considered decision. A false positive here costs a
+  # loud `pnpm run` failure; a false negative costs an unchecked push.
+  grep -qE "\"$1\"[[:space:]]*:" "$2/package.json"
+}
+
+# Every directory holding a JS package this repo owns.
+#
+# A repo with a root package.json is a workspace: `turbo run lint` fans out and
+# running per-package as well would double the work. A repo WITHOUT one keeps
+# its JS in subdirectories -- web/ and web-admin/ in the plugin repos,
+# apps/frontend/ in the siblings -- and their CI runs the same scripts there
+# with `working-directory:`.
+#
+# ## Why this exists (#852)
+#
+# The gate used to check the repo root and nothing else. In the ten repos with
+# no root package.json -- every plugin, every sibling, both runner repos -- it
+# printed `javascript n/a - no package.json in this repo` and then
+# `verify passed`, on repos whose entire frontend is JS. A 100% TypeScript
+# change pushed green with zero JavaScript verification.
+#
+# That is worse than the missing hooks this gate was built to fix. A repo with
+# no hooks makes no claim; this one claimed to have checked. And the standard
+# it was written to enforce says exactly that inapplicable and absent must not
+# look the same -- while reporting "not applicable" for the language the change
+# was written in.
+# Every directory holding a Python project this repo owns.
+#
+# ## Why this exists (#855)
+#
+# #853 fixed this for JavaScript and left Python with the identical bug. The
+# check was `[ -f pyproject.toml ]` — root only. Every sibling keeps its API at
+# `services/api/pyproject.toml`, so ruff, ruff-format and pyright were skipped
+# entirely, and #853's own rationale applies verbatim: a change pushed green
+# with zero verification of the language it was written in.
+#
+# Found by an agent whose 700-line TypeScript-and-Python change to tabsii-crm
+# ran exactly one check — terraform-fmt — and printed `verify passed`.
+py_dirs() {
+  if [ -f pyproject.toml ]; then
+    echo "."
+    return
+  fi
+  find . -name pyproject.toml \
+    -not -path "*/node_modules/*" -not -path "*/.venv/*" -not -path "*/dist/*" \
+    -not -path "*/.worktrees/*" -not -path "*/.terraform/*" -not -path "*/vendor/*" \
+    -not -path "*/site-packages/*" 2>/dev/null |
+    sed 's|/pyproject.toml$||' | sort
+}
+
+js_dirs() {
+  if [ -f package.json ]; then
+    echo "."
+    return
+  fi
+  # `.terraform/` is a DOWNLOAD CACHE of third-party modules, and the two runner
+  # repos carry eight vendored lambda packages in it -- each declaring lint and
+  # test scripts. Linting someone else's vendored code is slow, always red, and
+  # not this repo's business. It is gitignored, so a fresh worktree never has
+  # it and the omission was invisible until a primary checkout was audited.
+  find . -name package.json \
+    -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.next/*" \
+    -not -path "*/.turbo/*" -not -path "*/.worktrees/*" -not -path "*/out/*" \
+    -not -path "*/coverage/*" -not -path "*/.venv/*" \
+    -not -path "*/.terraform/*" -not -path "*/vendor/*" 2>/dev/null |
+    sed 's|/package.json$||' | sort
 }
 
 run_check() {
@@ -112,21 +179,42 @@ skip() {
 
 # Python first: ruff is near-instant, so the cheapest feedback on the largest
 # single class of failure comes back immediately.
-if [ -f pyproject.toml ]; then
+PY_DIRS=$(py_dirs)
+if [ -n "$PY_DIRS" ]; then
   if [ -n "$LIST" ] || command -v uv >/dev/null 2>&1; then
-    run_check ruff-check uv run ruff check .
-    run_check ruff-format uv run ruff format --check .
-    run_check pyright uv run pyright
-    if [ -n "$PYTEST" ]; then
-      run_check pytest uv run pytest -q
-    else
-      skip pytest "excluded - set BIFFO_VERIFY_PYTEST=1 where the suite is fast"
-    fi
+    for d in $PY_DIRS; do
+      suffix=""
+      [ "$d" != "." ] && suffix="(${d#./})"
+      if [ "$d" = "." ]; then
+        run_check "ruff-check$suffix" uv run ruff check .
+        run_check "ruff-format$suffix" uv run ruff format --check .
+        run_check "pyright$suffix" uv run pyright
+        # bandit is NOT excluded: it exits non-zero on findings and it is the
+        # RUN step that fails in CI, not the artefact upload. See the exclusion
+        # audit in verify-parity.test.ts (#855).
+        [ -d services ] && run_check "bandit$suffix" uv run bandit -r services -ll -q
+        if [ -n "$PYTEST" ]; then
+          run_check "pytest$suffix" uv run pytest -q
+        else
+          skip "pytest$suffix" "excluded - set BIFFO_VERIFY_PYTEST=1 where the suite is fast"
+        fi
+      else
+        run_check "ruff-check$suffix" uv run --directory "$d" ruff check .
+        run_check "ruff-format$suffix" uv run --directory "$d" ruff format --check .
+        run_check "pyright$suffix" uv run --directory "$d" pyright
+        run_check "bandit$suffix" uv run --directory "$d" bandit -r src -ll -q
+        if [ -n "$PYTEST" ]; then
+          run_check "pytest$suffix" uv run --directory "$d" pytest -q
+        else
+          skip "pytest$suffix" "excluded - set BIFFO_VERIFY_PYTEST=1 where the suite is fast"
+        fi
+      fi
+    done
   else
     skip python "uv not installed"
   fi
 else
-  skip python "no pyproject.toml in this repo"
+  skip python "no pyproject.toml anywhere in this repo"
 fi
 
 # Terraform, wherever this repo keeps it: modules/ in the template and
@@ -162,18 +250,30 @@ fi
 
 # JS, cheapest first; `test` last because it is slowest and the most likely to
 # be interrupted by an impatient reader.
-if [ -f package.json ]; then
+JS_DIRS=$(js_dirs)
+if [ -n "$JS_DIRS" ]; then
   skip build "excluded - a full app build is too slow for a push gate"
-  for s in lint typecheck format:check test; do
-    label=$(printf '%s' "$s" | tr -d ':')
-    if have_script "$s"; then
-      run_check "$label" pnpm run "$s"
-    else
-      skip "$label" "no \"$s\" script in package.json"
-    fi
+  for d in $JS_DIRS; do
+    # Name the package in the label when there is more than one, so a failure
+    # says WHERE. A single unlabelled "lint" across three packages is how you
+    # end up fixing the wrong one.
+    suffix=""
+    [ "$d" != "." ] && suffix="(${d#./})"
+    for s in lint typecheck format:check test; do
+      label="$(printf '%s' "$s" | tr -d ':')$suffix"
+      if have_script "$s" "$d"; then
+        if [ "$d" = "." ]; then
+          run_check "$label" pnpm run "$s"
+        else
+          run_check "$label" pnpm --dir "$d" run "$s"
+        fi
+      else
+        skip "$label" "no \"$s\" script"
+      fi
+    done
   done
 else
-  skip javascript "no package.json in this repo"
+  skip javascript "no package.json anywhere in this repo"
 fi
 
 [ -n "$LIST" ] && exit 0
@@ -184,6 +284,37 @@ if [ -n "$FAILED" ]; then
   printf 'Fix these here - CI will find them anyway, three minutes and a merge race later.\n'
   printf 'Most format failures are one command: pnpm run format\n\n'
   exit 1
+fi
+if [ -z "$PASSED" ]; then
+  # "Nothing applicable ran" is a different outcome from "checks passed", and
+  # conflating them is the exact failure this gate exists to remove -- the
+  # standard's own principle, applied to the gate itself. tabsii-crm ran ONE
+  # check on a 700-line change and printed a pass (#855).
+  #
+  # Whether that BLOCKS depends on one thing: does this repo have CI the gate
+  # should have mirrored?
+  #
+  #   - CI exists and the gate ran nothing -> that is the #855 bug. Block.
+  #   - No CI at all -> the repo has no shift-left obligation, and blocking
+  #     every push there is friction with no benefit. Friction is what drives
+  #     people to BIFFO_SKIP_VERIFY, which is a counter-metric H4 pre-registered
+  #     as refuting itself. Say it loudly, exit 0.
+  #
+  # Found immediately: the first run of this rule refused the push in the three
+  # repos that have no CI (tabsii-runners, biffo-runners,
+  # tabsii-data-model-design) -- blocking the very sync PR that was installing
+  # the gate.
+  printf '\033[31mverify ran NOTHING - this is not a pass\033[0m\n'
+  if [ -f .github/workflows/ci.yml ]; then
+    printf 'This repo HAS CI, and the gate mirrored none of it. That is the #855 bug:\n'
+    printf 'a gate that reports on work it never checked. Run scripts/gate-coverage.sh\n'
+    printf 'to see which of its CI checks are missing.\n\n'
+    exit 1
+  fi
+  printf 'This repo has no CI for the gate to mirror, so there is nothing to shift\n'
+  printf 'left. Not blocking -- but nothing was verified here.\n'
+  printf 'See docs/practices/standards/local-gates.md\n\n'
+  exit 0
 fi
 printf '\033[32mverify passed\033[0m -%s\n' "$PASSED"
 [ -n "$SKIPPED" ] && printf '\033[90mnot applicable here:%s\033[0m\n' "$SKIPPED"
