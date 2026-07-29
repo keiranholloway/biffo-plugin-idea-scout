@@ -121,7 +121,7 @@ async def test_the_dedup_history_survives_the_fan_ins_intersection():
 
     brief = shared.get("brief")
     assert brief is not None, f"the brief did not survive; shared keys: {list(shared)}"
-    assert "Already offered" in brief.get("previously_suggested", []), (
+    assert "Already offered" in [e["title"] for e in brief.get("previously_suggested", [])], (
         "the dedup history did not reach synthesis through the intersection"
     )
 
