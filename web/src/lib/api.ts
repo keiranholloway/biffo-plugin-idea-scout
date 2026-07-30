@@ -37,6 +37,21 @@ export interface BusinessModel {
   description: string | null
 }
 
+/** Everything the run form needs, in one response.
+ *
+ * One request instead of five. Each `/api/v1/plugins/idea-scout/*` call is
+ * served by the shared plugin host, which then calls Core — so every request
+ * costs two Lambda invocations, and fetching these separately on mount
+ * self-throttled against the account concurrency ceiling (#79).
+ */
+export interface FormOptions {
+  build_types: BuildType[]
+  business_models: BusinessModel[]
+  models: ModelOption[]
+  preferences: Preference[]
+  complexity_levels: ComplexityLevel[]
+}
+
 export interface ComplexityLevel {
   value: number
   label: string
@@ -134,11 +149,10 @@ export function createApi(getIdToken: () => string | null) {
   }
 
   return {
-    getBuildTypes: () => request<BuildType[]>('GET', '/build-types'),
-    getBusinessModels: () => request<BusinessModel[]>('GET', '/business-models'),
-    getComplexityLevels: () => request<ComplexityLevel[]>('GET', '/complexity-levels'),
-    getPreferences: () => request<Preference[]>('GET', '/preferences'),
-    getModels: () => request<ModelOption[]>('GET', '/models'),
+    // One call replacing getBuildTypes/getBusinessModels/getComplexityLevels/
+    // getPreferences/getModels (#79). Those five endpoints still exist server-side
+    // and are still individually correct; nothing in this app calls them.
+    getFormOptions: () => request<FormOptions>('GET', '/form-options'),
     // The server returns an OBJECT — `{"research_model": "…"}` or
     // `{"research_model": null}` — so unwrap it. This was typed as a bare
     // `string | null` and `request<T>` casts blindly (`as T`), so TypeScript had

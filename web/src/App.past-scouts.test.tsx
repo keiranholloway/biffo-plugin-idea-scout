@@ -29,15 +29,16 @@ vi.mock("./lib/api", async (importOriginal) => {
     // as "no rows rendered", which reads exactly like the feature being broken.
     createApi: () => ({
       listRuns,
-      getPreferences: () => Promise.resolve([]),
-      getBuildTypes: () =>
-        Promise.resolve([
-          { key: "micro-saas", label: "MicroSaaS", description: null },
-        ]),
-      getBusinessModels: () => Promise.resolve([]),
-      getComplexityLevels: () =>
-        Promise.resolve([{ value: 3, label: "moderate" }]),
-      getModels: () => Promise.resolve([]),
+      getFormOptions: () =>
+        Promise.resolve({
+          build_types: [
+            { key: "micro-saas", label: "MicroSaaS", description: null },
+          ],
+          business_models: [],
+          models: [],
+          preferences: [],
+          complexity_levels: [{ value: 3, label: "moderate" }],
+        }),
       getLastUsedModel: () => Promise.resolve(null),
       getRun: vi.fn(),
       startRun: vi.fn(),

@@ -182,6 +182,29 @@ def _run_state(run: Any) -> dict[str, Any]:
     }
 
 
+def _build_type_json(t: Any) -> dict[str, Any]:
+    return {"key": t.key, "label": t.label, "description": t.description}
+
+
+def _business_model_json(m: Any) -> dict[str, Any]:
+    return {"key": m.key, "label": m.label, "description": m.description}
+
+
+def _model_option_json(m: Any) -> dict[str, Any]:
+    return {"id": m.id, "model_id": m.model_id, "label": m.label, "is_default": m.is_default}
+
+
+def _preferences_json() -> list[dict[str, Any]]:
+    return [dict(p) for p in PREFERENCES]
+
+
+def _complexity_levels_json() -> list[dict[str, Any]]:
+    return [
+        {"value": level, "label": complexity_label(level)}
+        for level in range(MIN_COMPLEXITY, MAX_COMPLEXITY + 1)
+    ]
+
+
 def _candidate_json(candidate: Any) -> dict[str, Any]:
     return {
         "id": candidate.id,
@@ -199,8 +222,7 @@ async def list_build_types(
     svc: IdeaScoutService = Depends(get_service),
 ) -> list[dict]:
     """The active build-type categories, for the run form's picker."""
-    types = await svc.list_build_types()
-    return [{"key": t.key, "label": t.label, "description": t.description} for t in types]
+    return [_build_type_json(t) for t in await svc.list_build_types()]
 
 
 @app.get("/business-models")
@@ -213,8 +235,7 @@ async def list_business_models(
     Carries no valuation, multiple or price figure — see the table's manifest
     description for why.
     """
-    models = await svc.list_business_models()
-    return [{"key": m.key, "label": m.label, "description": m.description} for m in models]
+    return [_business_model_json(m) for m in await svc.list_business_models()]
 
 
 @app.get("/models")
@@ -223,16 +244,7 @@ async def list_models(
     svc: IdeaScoutService = Depends(get_service),
 ) -> list[dict]:
     """The active, web-capable models founders can choose for research agents."""
-    models = await svc.list_model_catalog()
-    return [
-        {
-            "id": m.id,
-            "model_id": m.model_id,
-            "label": m.label,
-            "is_default": m.is_default,
-        }
-        for m in models
-    ]
+    return [_model_option_json(m) for m in await svc.list_model_catalog()]
 
 
 @app.get("/models/last-used")
@@ -263,7 +275,7 @@ async def list_preferences(
     agents are briefed with. Two copies drift, and the UI's is the one that
     would be wrong.
     """
-    return [dict(p) for p in PREFERENCES]
+    return _preferences_json()
 
 
 @app.get("/complexity-levels")
@@ -276,10 +288,44 @@ async def list_complexity_levels(
     reads is the same wording the agents are briefed with — two copies would
     drift, and the UI's copy is the one that would be wrong.
     """
-    return [
-        {"value": level, "label": complexity_label(level)}
-        for level in range(MIN_COMPLEXITY, MAX_COMPLEXITY + 1)
-    ]
+    return _complexity_levels_json()
+
+
+@app.get("/form-options")
+async def form_options(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """Everything the run form needs to render, in one request.
+
+    Exists for a concurrency reason, not an aesthetic one. Every
+    ``/api/v1/plugins/idea-scout/*`` call is served by the *shared plugin host*
+    (ADR-0021), whose handler then calls Core's internal API — so each request
+    the page makes costs two Lambda invocations, not one. The founder app used
+    to fetch these five lists separately on mount, which asked for ~10
+    concurrent invocations against an account ceiling of 10 and throttled
+    itself; API Gateway renders a Lambda throttle as
+    ``503 {"message":"Service Unavailable"}`` (#79).
+
+    The three Core-backed lists are awaited **in sequence, not gathered**. Under
+    a tight concurrency ceiling, serialising is the point: three sequential
+    reads hold one Core slot at a time for ~100ms each, where gathering holds
+    three at once. The page is a few hundred milliseconds slower and
+    dramatically less likely to throttle.
+
+    Each list is shaped by the same helper its individual endpoint uses, so the
+    two can never drift — asserted in test_idea_scout_app.py.
+    """
+    build_types = await svc.list_build_types()
+    business_models = await svc.list_business_models()
+    models = await svc.list_model_catalog()
+    return {
+        "build_types": [_build_type_json(t) for t in build_types],
+        "business_models": [_business_model_json(m) for m in business_models],
+        "models": [_model_option_json(m) for m in models],
+        "preferences": _preferences_json(),
+        "complexity_levels": _complexity_levels_json(),
+    }
 
 
 @app.post("/runs", status_code=201)
