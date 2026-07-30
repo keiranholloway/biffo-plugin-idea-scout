@@ -207,6 +207,18 @@ async def delete_chat_agent(agent_key: str, admin: ForwardedUser = Depends(requi
     await _core_request("DELETE", f"{_CHAT_AGENTS_BASE}/{agent_key}", admin=admin)
 
 
+@app.get("/chat-agents/{agent_key}/history")
+async def chat_agent_history(agent_key: str, admin: ForwardedUser = Depends(require_admin)) -> Any:
+    """Who changed this prompt, when, and what it said before.
+
+    Missed by #69, which proxied CRUD and stopped there — so the panel's own base
+    404'd on history and the "an admin can see a prompt's history" criterion of
+    biffo-template#909 was unreachable even though Core records every edit.
+    Found by trying it, not by review.
+    """
+    return await _core_request("GET", f"{_CHAT_AGENTS_BASE}/{agent_key}/history", admin=admin)
+
+
 # RELATIVE path, deliberately. This app is mounted under
 # `/api/v1/plugins/idea-scout/admin`, so the absolute path this route used to
 # declare — `/api/v1/admin/plugins/idea-scout/builtin-agents` — actually served

@@ -422,14 +422,29 @@ DEFAULT_INSTRUCTIONS: dict[str, str] = {
 #: single source of truth for all readers: app.py, admin_app.py, and
 #: seed_agent_config.py all import and use these, so the three cannot drift apart.
 #:
-#: **OpenRouter spells a minor version with a DOT.** ``anthropic/claude-opus-4-8``
-#: is not a model; ``anthropic/claude-opus-4-8`` is. A wrong slug is not rejected
-#: anywhere — not at save time, not at run creation — so it surfaces only as a
-#: failed async run, after the three research agents have already been paid for.
-#: This exact slug is already recorded once in the estate's corpus, on ideation's
-#: analyst, described as "absent from all 367 models OpenRouter serves". It was
-#: fixed there and left here. ``test_definitions.py`` now fails on the hyphenated
-#: form so the third instance cannot ship.
+#: **Use the canonical slug OpenRouter publishes**: a minor version is spelled
+#: with a DOT, ``anthropic/claude-opus-4.8``.
+#:
+#: The hyphenated ``anthropic/claude-opus-4-8`` was this plugin's default for
+#: months, and the reason it was changed was originally stated wrongly, so the
+#: correction is recorded here rather than quietly fixed:
+#:
+#: - It is **absent** from OpenRouter's published ``/v1/models`` list (367 models
+#:   on 2026-07-30), which is what prompted the change.
+#: - It is nevertheless **accepted and billed**. The estate's own agent-run
+#:   ledger shows **26 runs on that exact slug, $3.74 charged, 24 completed** —
+#:   including every successful Idea Scout synthesis to date. OpenRouter evidently
+#:   normalises it.
+#:
+#: So the hyphenated form is not broken, and the claim that it "would fail after
+#: three paid research calls" was false. The reason to prefer the dotted form is
+#: narrower and still worth holding: an **unlisted alias is undocumented
+#: behaviour** that can stop being normalised without notice, and nothing here
+#: validates a model id — not the admin panel at save time, not Core at run
+#: creation — so the failure would surface only as a failed async run.
+#:
+#: ``test_definitions.py`` asserts the canonical form on that basis. It is a
+#: hygiene guard, not a defect guard, and its message says so.
 DEFAULT_RESEARCH_MODEL = "anthropic/claude-sonnet-4:online"
 DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4.8"
 

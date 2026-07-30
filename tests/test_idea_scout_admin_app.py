@@ -249,3 +249,17 @@ class TestChatAgentProxyForwardsAsTheCallingAdmin:
             assert "Administrator access required" in str(exc.detail)
         else:  # pragma: no cover - the point of the test
             raise AssertionError("Core's 403 must reach the panel, not be swallowed")
+
+
+def test_the_history_route_is_proxied_too():
+    """#69 proxied CRUD and stopped, so history 404'd from the panel's own base.
+
+    Asserts the route EXISTS on the app at a relative path — the same defect
+    class as the absolute-path `builtin-agents` declaration, and the reason
+    biffo-template#909's "an admin can see a prompt's history" criterion was
+    unreachable while Core was faithfully recording every edit.
+    """
+    paths = {r.path for r in app.routes if hasattr(r, "path")}
+    assert "/chat-agents/{agent_key}/history" in paths, (
+        f"history is not proxied; the panel's base would 404. Routes: {sorted(paths)}"
+    )
