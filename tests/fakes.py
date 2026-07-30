@@ -13,7 +13,10 @@ Two of them, at different levels:
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from idea_scout.adapter import CoreNotFoundError
@@ -188,6 +191,12 @@ class FakeCoreGateway:
         )
         self.configs = configs or {}
         self.model_catalog = model_catalog or []
+        # Observes whether the Core-backed reads overlap. The fake yields inside
+        # each read, so gathered calls genuinely interleave and are counted, while
+        # sequential awaits never exceed 1. Without the yield a gather would still
+        # run each coroutine straight through and the check would be vacuous.
+        self._reads_in_flight = 0
+        self.max_concurrent_reads = 0
         self.runs: dict[str, ScoutRun] = {}
         self.candidates: list[Candidate] = []
         self.agent_runs: dict[str, FakeAgentRun] = {}
@@ -209,23 +218,36 @@ class FakeCoreGateway:
 
     # ── Admin-configured inputs ──────────────────────────────────────────────
 
+    @asynccontextmanager
+    async def _observed_read(self) -> AsyncIterator[None]:
+        self._reads_in_flight += 1
+        self.max_concurrent_reads = max(self.max_concurrent_reads, self._reads_in_flight)
+        try:
+            await asyncio.sleep(0)  # a real suspension point, so overlap is observable
+            yield
+        finally:
+            self._reads_in_flight -= 1
+
     async def list_build_types(self, *, active_only: bool = True) -> list[BuildType]:
-        types = self.build_types
-        if active_only:
-            types = [t for t in types if t.active]
-        return list(types)
+        async with self._observed_read():
+            types = self.build_types
+            if active_only:
+                types = [t for t in types if t.active]
+            return list(types)
 
     async def list_business_models(self, *, active_only: bool = True) -> list[BusinessModel]:
-        models = self.business_models
-        if active_only:
-            models = [m for m in models if m.active]
-        return list(models)
+        async with self._observed_read():
+            models = self.business_models
+            if active_only:
+                models = [m for m in models if m.active]
+            return list(models)
 
     async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
-        entries = self.model_catalog
-        if active_only:
-            entries = [e for e in entries if e.active]
-        return sorted(entries, key=lambda e: e.label)
+        async with self._observed_read():
+            entries = self.model_catalog
+            if active_only:
+                entries = [e for e in entries if e.active]
+            return sorted(entries, key=lambda e: e.label)
 
     async def get_own_config(self, *, role: str) -> dict[str, Any] | None:
         return self.configs.get(role)

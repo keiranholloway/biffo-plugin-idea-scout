@@ -66,20 +66,16 @@ export default function App() {
   useEffect(() => {
     if (idToken == null) return;
     void Promise.all([
-      api.current.getBuildTypes(),
-      api.current.getBusinessModels(),
-      api.current.getComplexityLevels(),
-      api.current.getPreferences(),
-      api.current.getModels(),
+      api.current.getFormOptions(),
       api.current.getLastUsedModel(),
       api.current.listRuns(),
     ])
-      .then(([types, bizModels, levels, prefs, modelList, lastUsed, existing]) => {
-        setBuildTypes(types);
-        setBusinessModels(bizModels);
-        setComplexityLevels(levels);
-        setPreferences(prefs);
-        setModels(modelList);
+      .then(([options, lastUsed, existing]) => {
+        setBuildTypes(options.build_types);
+        setBusinessModels(options.business_models);
+        setComplexityLevels(options.complexity_levels);
+        setPreferences(options.preferences);
+        setModels(options.models);
         setSelectedModel(lastUsed);
         setRuns(existing);
         setLoaded(true);

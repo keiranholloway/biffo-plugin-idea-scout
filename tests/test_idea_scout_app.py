@@ -534,3 +534,57 @@ def test_exposes_an_asgi_app_not_a_lambda_handler():
 
     assert hasattr(module, "app")
     assert not hasattr(module, "handler")
+
+
+# ── /form-options (#79) ──────────────────────────────────────────────────────
+
+
+def test_form_options_matches_the_individual_endpoints_exactly(client: TestClient):
+    """The whole point of the composite is that it replaces five calls. If its
+    shaping drifts from theirs, the form renders subtly different data depending
+    on which path it took — so assert equality rather than 'looks about right'."""
+    combined = client.get("/form-options").json()
+
+    assert combined["build_types"] == client.get("/build-types").json()
+    assert combined["business_models"] == client.get("/business-models").json()
+    assert combined["models"] == client.get("/models").json()
+    assert combined["preferences"] == client.get("/preferences").json()
+    assert combined["complexity_levels"] == client.get("/complexity-levels").json()
+
+
+def test_form_options_carries_every_key_the_form_needs(client: TestClient):
+    body = client.get("/form-options").json()
+    assert set(body) == {
+        "build_types",
+        "business_models",
+        "models",
+        "preferences",
+        "complexity_levels",
+    }
+    # Non-empty for the ones the fixture seeds, so an accidentally-empty payload
+    # cannot pass as "well-formed".
+    assert body["build_types"]
+    assert body["preferences"]
+    assert body["complexity_levels"]
+
+
+def test_form_options_requires_a_founder(client: TestClient):
+    app.dependency_overrides.pop(require_founder, None)
+    try:
+        assert client.get("/form-options").status_code == 401
+    finally:
+        app.dependency_overrides[require_founder] = lambda: ForwardedUser(
+            sub=OWNER, groups=["founder"], token="tok"
+        )
+
+
+def test_form_options_reads_core_sequentially_not_concurrently(
+    client: TestClient, core: FakeCoreGateway
+):
+    """Serialising the Core-backed reads is the #79 fix, not an implementation
+    detail: under an account concurrency ceiling of 10, gathering them holds
+    three Core slots at once instead of one."""
+    assert core.max_concurrent_reads <= 1, (
+        f"form-options held {core.max_concurrent_reads} Core reads at once; "
+        "await them in sequence rather than gathering."
+    )
