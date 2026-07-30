@@ -259,7 +259,7 @@ def test_the_history_route_is_proxied_too():
     biffo-template#909's "an admin can see a prompt's history" criterion was
     unreachable while Core was faithfully recording every edit.
     """
-    paths = {r.path for r in app.routes if hasattr(r, "path")}
+    paths = {p for p in (getattr(r, "path", None) for r in app.routes) if p is not None}
     assert "/chat-agents/{agent_key}/history" in paths, (
         f"history is not proxied; the panel's base would 404. Routes: {sorted(paths)}"
     )
