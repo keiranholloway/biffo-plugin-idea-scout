@@ -54,6 +54,7 @@ from .models import (
     RESEARCHING,
     SYNTHESISING,
     BuildType,
+    BusinessModel,
     Candidate,
     ScoutRun,
     UserProfile,
@@ -71,6 +72,15 @@ class RunNotFoundError(IdeaScoutError):
 
 class UnknownBuildTypeError(IdeaScoutError):
     """The requested build type isn't an active category."""
+
+
+class UnknownBusinessModelError(IdeaScoutError):
+    """The requested business model isn't an active category.
+
+    Rejected loudly rather than dropped, for the same reason an unknown
+    preference key is (#34): a client sending a stale key should learn it is
+    stale, not silently get a run scoped to nothing.
+    """
 
 
 class InvalidComplexityError(IdeaScoutError):
@@ -202,6 +212,9 @@ class IdeaScoutService:
     async def list_build_types(self) -> list[BuildType]:
         return await self._core.list_build_types(active_only=True)
 
+    async def list_business_models(self) -> list[BusinessModel]:
+        return await self._core.list_business_models(active_only=True)
+
     async def list_model_catalog(self) -> list:  # type: ignore
         """Admin-configured models for research agents, filtered to active and web-capable."""
         entries = await self._core.list_model_catalog(active_only=True)
@@ -218,6 +231,7 @@ class IdeaScoutService:
         complexity: int,
         preferences: list[str] | None = None,
         research_model: str | None = None,
+        business_model: str | None = None,
     ) -> ScoutRun:
         """Validate the inputs, brief the three research agents, and record the run.
 
@@ -249,6 +263,18 @@ class IdeaScoutService:
         if chosen is None:
             raise UnknownBuildTypeError(build_type)
 
+        # Optional, unlike the build type: None means "no preference", which is a
+        # real answer. Only a *supplied* key is validated — and validated against
+        # the active list for the same reason the build type is, since an
+        # inactive or invented category would brief agents on something an admin
+        # has withdrawn.
+        chosen_business_model: BusinessModel | None = None
+        if business_model is not None:
+            models = await self._core.list_business_models(active_only=True)
+            chosen_business_model = next((m for m in models if m.key == business_model), None)
+            if chosen_business_model is None:
+                raise UnknownBusinessModelError(business_model)
+
         # Validate and resolve research_model if provided. Must be present, active,
         # and web-capable. Resolve once here to the model slug, then pass it down
         # so we don't re-fetch the catalog for each research agent.
@@ -268,6 +294,7 @@ class IdeaScoutService:
             complexity=complexity,
             preferences=chosen_preferences,
             previously_suggested=previously_suggested,
+            business_model=chosen_business_model,
         )
 
         # One chain for all three, generated here because the run row does not
@@ -298,6 +325,7 @@ class IdeaScoutService:
             preferences=chosen_preferences,
             research_run_ids=research_run_ids,
             chain_id=chain_id,
+            business_model=business_model,
             research_model=chosen_model_slug,
         )
 
@@ -516,6 +544,7 @@ class IdeaScoutService:
         complexity: int,
         preferences: list[str],
         previously_suggested: list[str] | None = None,
+        business_model: BusinessModel | None = None,
     ) -> dict[str, Any]:
         """What the agents are told about who this run is for.
 
@@ -533,6 +562,15 @@ class IdeaScoutService:
             },
             "complexity": complexity_label(complexity),
         }
+        # Omitted entirely when the founder expressed no preference, for the same
+        # reason an empty profile is: a null here would invite the model to reason
+        # about a revenue model that was never chosen.
+        if business_model is not None:
+            brief["business_model"] = {
+                "key": business_model.key,
+                "label": business_model.label,
+                "description": business_model.description,
+            }
         if not profile.is_empty:
             brief["profile"] = _profile_payload(profile)
         # Omitted entirely when nothing was chosen, for the same reason an empty

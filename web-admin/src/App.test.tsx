@@ -14,6 +14,10 @@ const listBuildTypes = vi.fn()
 const createBuildType = vi.fn()
 const updateBuildType = vi.fn()
 const removeBuildType = vi.fn()
+const listBusinessModels = vi.fn()
+const createBusinessModel = vi.fn()
+const updateBusinessModel = vi.fn()
+const removeBusinessModel = vi.fn()
 const listChatAgents = vi.fn()
 const getBuiltinAgents = vi.fn()
 const createChatAgent = vi.fn()
@@ -38,6 +42,10 @@ vi.mock('./lib/api', async (importOriginal) => {
       create: createBuildType,
       update: updateBuildType,
       remove: removeBuildType,
+      listBusinessModels,
+      createBusinessModel,
+      updateBusinessModel,
+      removeBusinessModel,
       listChatAgents,
       getBuiltinAgents,
       createChatAgent,
@@ -166,6 +174,10 @@ describe('Idea Scout admin panel', () => {
     createBuildType.mockReset().mockResolvedValue(MICRO_SAAS)
     updateBuildType.mockReset().mockResolvedValue(MICRO_SAAS)
     removeBuildType.mockReset()
+    listBusinessModels.mockReset().mockResolvedValue([])
+    createBusinessModel.mockReset()
+    updateBusinessModel.mockReset()
+    removeBusinessModel.mockReset()
     listChatAgents.mockReset().mockResolvedValue([RESEARCH_AGENT, SYNTHESIS_AGENT])
     getBuiltinAgents.mockReset().mockResolvedValue({
       agents: [BUILTIN_COMMUNITY_AGENT, BUILTIN_NARRATIVE_AGENT, BUILTIN_COMPETITIVE_AGENT, BUILTIN_SYNTHESIS_AGENT],
@@ -179,13 +191,51 @@ describe('Idea Scout admin panel', () => {
     deleteModelCatalogEntry.mockReset()
   })
 
+  describe('Business Models tab', () => {
+    const SUBSCRIPTION = {
+      id: 'bm1',
+      key: 'subscription',
+      label: 'Subscription / SaaS',
+      description: 'Recurring payment for continued access.',
+      active: true,
+      sort_order: 1,
+    }
+
+    it('lists the models an admin has configured', async () => {
+      listBusinessModels.mockResolvedValue([SUBSCRIPTION])
+      render(<App />)
+      await userEvent.click(await screen.findByRole('button', { name: /^Business Models$/i }))
+      expect(await screen.findByText('Subscription / SaaS')).toBeTruthy()
+    })
+
+    it('says an empty list degrades the run form rather than blocking it', async () => {
+      // The consequence genuinely differs from build types, where an empty table
+      // stops every run. Saying the wrong one would send an admin chasing a
+      // non-problem.
+      listBusinessModels.mockResolvedValue([])
+      render(<App />)
+      await userEvent.click(await screen.findByRole('button', { name: /^Business Models$/i }))
+      expect(await screen.findByText(/omits the picker until one exists/i)).toBeTruthy()
+    })
+
+    it('does not disturb the build-types pane it shares components with', async () => {
+      listBusinessModels.mockResolvedValue([SUBSCRIPTION])
+      render(<App />)
+      await userEvent.click(await screen.findByRole('button', { name: /^Business Models$/i }))
+      await userEvent.click(screen.getByRole('button', { name: /Build Types/i }))
+      expect(await screen.findByText(MICRO_SAAS.label)).toBeTruthy()
+      expect(screen.queryByText('Subscription / SaaS')).toBeNull()
+    })
+  })
+
   describe('Tab switching', () => {
-    it('renders three tabs: Build Types, Agents, Models', async () => {
+    it('renders four tabs: Build Types, Business Models, Agents, Models', async () => {
       render(<App />)
       await waitFor(() => {
         expect(screen.getByRole('button', { name: /Build Types/i })).toBeTruthy()
+        expect(screen.getByRole('button', { name: /^Business Models$/i })).toBeTruthy()
         expect(screen.getByRole('button', { name: /Agents/i })).toBeTruthy()
-        expect(screen.getByRole('button', { name: /Models/i })).toBeTruthy()
+        expect(screen.getByRole('button', { name: /^Models$/i })).toBeTruthy()
       })
     })
 
@@ -222,7 +272,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /Models/i })
+      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
       await user.click(modelsTab)
 
       await waitFor(() => {
@@ -394,7 +444,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /Models/i })
+      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
       await user.click(modelsTab)
 
       await waitFor(() => {
@@ -407,7 +457,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /Models/i })
+      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
       await user.click(modelsTab)
 
       await waitFor(() => {
@@ -421,7 +471,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /Models/i })
+      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
       await user.click(modelsTab)
 
       const addButton = await screen.findByRole('button', { name: /Add.*Model/i })
@@ -438,7 +488,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /Models/i })
+      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
       await user.click(modelsTab)
 
       const addButton = await screen.findByRole('button', { name: /Add.*Model/i })

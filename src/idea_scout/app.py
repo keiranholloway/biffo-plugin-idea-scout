@@ -48,6 +48,7 @@ from .service import (
     MalformedCandidatesError,
     RunNotFoundError,
     UnknownBuildTypeError,
+    UnknownBusinessModelError,
     UnknownModelError,
     UnknownPreferenceError,
 )
@@ -117,6 +118,7 @@ async def _seed_agent_config() -> None:
 _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     RunNotFoundError: 404,
     UnknownBuildTypeError: 422,
+    UnknownBusinessModelError: 422,
     InvalidComplexityError: 422,
     UnknownPreferenceError: 422,
     UnknownModelError: 422,
@@ -150,6 +152,12 @@ class StartRunRequest(BaseModel):
     # The catalog entry ID the founder chose for research agents. Optional;
     # when not specified, the admin's configured model or built-in default is used.
     research_model: str | None = None
+    # How the founder wants the idea to make money. Optional and defaulted None:
+    # unlike build_type this does NOT gate a run, because a founder may genuinely
+    # have no preference and defaulting to one would scope every run from an input
+    # they never made. Validated against the active list in the service, next to
+    # the build type, so both rejections read the same way.
+    business_model: str | None = Field(default=None, max_length=64)
 
 
 def _run_state(run: Any) -> dict[str, Any]:
@@ -168,6 +176,9 @@ def _run_state(run: Any) -> dict[str, Any]:
         "in_flight": run.status in IN_FLIGHT_STATUSES,
         "failure_reason": run.failure_reason,
         "research_model": run.research_model,
+        # Echoed for the same reason preferences are: a past run stays explicable
+        # after the founder changes their mind. None means "no preference".
+        "business_model": run.business_model,
     }
 
 
@@ -190,6 +201,20 @@ async def list_build_types(
     """The active build-type categories, for the run form's picker."""
     types = await svc.list_build_types()
     return [{"key": t.key, "label": t.label, "description": t.description} for t in types]
+
+
+@app.get("/business-models")
+async def list_business_models(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> list[dict]:
+    """The active business-model categories, for the run form's picker.
+
+    Carries no valuation, multiple or price figure — see the table's manifest
+    description for why.
+    """
+    models = await svc.list_business_models()
+    return [{"key": m.key, "label": m.label, "description": m.description} for m in models]
 
 
 @app.get("/models")
@@ -271,6 +296,7 @@ async def start_run(
         complexity=body.complexity,
         preferences=body.preferences,
         research_model=body.research_model,
+        business_model=body.business_model,
     )
     return _run_state(run)
 

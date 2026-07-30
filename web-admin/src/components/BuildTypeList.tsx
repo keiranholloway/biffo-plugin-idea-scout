@@ -3,6 +3,9 @@ import type { BuildType } from '../lib/api'
 interface Props {
   types: readonly BuildType[]
   busy: boolean
+  /** Shown when the list is empty. The consequence differs between the two
+   * pickers: no build types blocks every run, no business models does not. */
+  emptyMessage?: string
   onEdit: (type: BuildType) => void
   onToggleActive: (type: BuildType) => void
 }
@@ -13,12 +16,18 @@ interface Props {
  * `active` is nullable because the generated migration DDL does not apply
  * declared defaults — treat null as false, the same reading the service uses.
  */
-export function BuildTypeList({ types, busy, onEdit, onToggleActive }: Props) {
+export function BuildTypeList({
+  types,
+  busy,
+  onEdit,
+  onToggleActive,
+  emptyMessage = 'No build types yet — a founder cannot start a scout until one exists.',
+}: Props) {
   if (types.length === 0) {
     // An empty list is a real state with a real consequence: the founder's run
     // form has nothing to offer and cannot start a scout. Say that, rather than
     // rendering an empty table that looks like a loading glitch.
-    return <p className="muted">No build types yet — a founder cannot start a scout until one exists.</p>
+    return <p className="muted">{emptyMessage}</p>
   }
 
   return (

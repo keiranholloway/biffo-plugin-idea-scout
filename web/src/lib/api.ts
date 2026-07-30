@@ -28,6 +28,15 @@ export interface BuildType {
   description: string | null
 }
 
+/** How an idea makes money. Same shape as BuildType and deliberately carrying no
+ * valuation field: the taxonomy came from a corpus of asking prices with no
+ * confirmed sales, so a multiple here would read as a valuation it is not. */
+export interface BusinessModel {
+  key: string
+  label: string
+  description: string | null
+}
+
 export interface ComplexityLevel {
   value: number
   label: string
@@ -126,6 +135,7 @@ export function createApi(getIdToken: () => string | null) {
 
   return {
     getBuildTypes: () => request<BuildType[]>('GET', '/build-types'),
+    getBusinessModels: () => request<BusinessModel[]>('GET', '/business-models'),
     getComplexityLevels: () => request<ComplexityLevel[]>('GET', '/complexity-levels'),
     getPreferences: () => request<Preference[]>('GET', '/preferences'),
     getModels: () => request<ModelOption[]>('GET', '/models'),
@@ -144,9 +154,19 @@ export function createApi(getIdToken: () => string | null) {
       const body = await request<{ research_model: string | null }>('GET', '/models/last-used')
       return body?.research_model ?? null
     },
-    startRun: (build_type: string, complexity: number, preferences: string[] = [], research_model?: string) => {
+    startRun: (
+      build_type: string,
+      complexity: number,
+      preferences: string[] = [],
+      research_model?: string,
+      business_model?: string,
+    ) => {
       const body: Record<string, unknown> = { build_type, complexity, preferences }
       if (research_model != null) body.research_model = research_model
+      // Omitted rather than sent as null when the founder expressed no
+      // preference: the server treats absent as "no preference" and an explicit
+      // null would be a second way of saying the same thing.
+      if (business_model) body.business_model = business_model
       return request<RunState>('POST', '/runs', body)
     },
     listRuns: () => request<RunState[]>('GET', '/runs'),

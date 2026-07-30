@@ -33,6 +33,7 @@ from .models import (
     RESEARCHING,
     AgentRunView,
     BuildType,
+    BusinessModel,
     Candidate,
     ModelCatalogEntry,
     ScoutRun,
@@ -54,6 +55,7 @@ _PLUGIN_CONFIG = f"{_ROOT}/plugins/me/config"
 # not the X-Biffo-User-Token this transport forwards. Hence 401, and every run
 # failing at start. Like every other constant here, it must go to Core.
 _BUILD_TYPES = f"{_ROOT}/plugins/idea-scout/build-types"
+_BUSINESS_MODELS = f"{_ROOT}/plugins/idea-scout/business-models"
 _MODEL_CATALOG = f"{_ROOT}/plugins/idea-scout/idea_scout_model_catalog"
 
 
@@ -112,6 +114,7 @@ def _run_from_row(row: dict[str, Any]) -> ScoutRun:
         created_at=row.get("created_at"),
         deleted=row.get("deleted") or False,
         research_model=row.get("research_model"),
+        business_model=row.get("business_model"),
     )
 
 
@@ -130,6 +133,17 @@ def _candidate_from_row(row: dict[str, Any]) -> Candidate:
 
 def _build_type_from_row(row: dict[str, Any]) -> BuildType:
     return BuildType(
+        id=row["id"],
+        key=row["key"],
+        label=row["label"],
+        description=row.get("description"),
+        active=bool(row.get("active")),
+        sort_order=row.get("sort_order"),
+    )
+
+
+def _business_model_from_row(row: dict[str, Any]) -> BusinessModel:
+    return BusinessModel(
         id=row["id"],
         key=row["key"],
         label=row["label"],
@@ -189,6 +203,16 @@ class CoreHttpGateway:
             types, key=lambda t: (t.sort_order if t.sort_order is not None else 0, t.label)
         )
 
+    async def list_business_models(self, *, active_only: bool = True) -> list[BusinessModel]:
+        rows = await self._t.request("GET", _BUSINESS_MODELS)
+        models = [_business_model_from_row(row) for row in rows]
+        if active_only:
+            models = [m for m in models if m.active]
+        # Same fallback as build types: sort_order is optional and admin-entered.
+        return sorted(
+            models, key=lambda m: (m.sort_order if m.sort_order is not None else 0, m.label)
+        )
+
     async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
         rows = await self._t.request("GET", _MODEL_CATALOG)
         entries = [_model_entry_from_row(row) for row in rows]
@@ -228,6 +252,7 @@ class CoreHttpGateway:
         research_run_ids: list[str],
         chain_id: str,
         research_model: str | None = None,
+        business_model: str | None = None,
     ) -> ScoutRun:
         row = await self._t.request(
             "POST",
@@ -242,6 +267,7 @@ class CoreHttpGateway:
                 "preferences": json.dumps(preferences),
                 "deleted": False,
                 "research_model": research_model,
+                "business_model": business_model,
             },
         )
         return _run_from_row(row)

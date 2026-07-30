@@ -67,6 +67,25 @@ class BuildType:
 
 
 @dataclass(frozen=True)
+class BusinessModel:
+    """An admin-configured business-model category — *how* an idea makes money,
+    as offered in the run form.
+
+    Deliberately the same shape as :class:`BuildType`, and deliberately carrying
+    no valuation field. The taxonomy was derived from a corpus of marketplace
+    asking prices with no confirmed sales in it, so any multiple attached here
+    would read to a founder as a valuation it is not.
+    """
+
+    id: str
+    key: str
+    label: str
+    description: str | None = None
+    active: bool = False
+    sort_order: int | None = None
+
+
+@dataclass(frozen=True)
 class ModelCatalogEntry:
     """An admin-configured model that founders can choose for research agents."""
 
@@ -102,6 +121,10 @@ class ScoutRun:
     #: The catalog entry ID the founder chose for research models, or None if
     #: the admin's configured default was used instead.
     research_model: str | None = None
+    #: The business-model key this run was scoped to, or None for "no
+    #: preference". None is a real answer here, not missing data — unlike
+    #: build_type, the picker is optional.
+    business_model: str | None = None
 
 
 @dataclass(frozen=True)

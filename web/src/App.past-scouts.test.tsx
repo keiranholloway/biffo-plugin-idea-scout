@@ -34,6 +34,7 @@ vi.mock("./lib/api", async (importOriginal) => {
         Promise.resolve([
           { key: "micro-saas", label: "MicroSaaS", description: null },
         ]),
+      getBusinessModels: () => Promise.resolve([]),
       getComplexityLevels: () =>
         Promise.resolve([{ value: 3, label: "moderate" }]),
       getModels: () => Promise.resolve([]),

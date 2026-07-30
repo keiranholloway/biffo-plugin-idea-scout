@@ -24,12 +24,13 @@ from idea_scout.definitions import (
     RESEARCH_AGENT_NAMES,
     seed_config_payloads,
 )
-from idea_scout.models import BuildType, Candidate, ScoutRun, UserProfile
+from idea_scout.models import BuildType, BusinessModel, Candidate, ScoutRun, UserProfile
 from idea_scout.service import (
     IdeaScoutService,
     InvalidComplexityError,
     RunNotFoundError,
     UnknownBuildTypeError,
+    UnknownBusinessModelError,
 )
 
 OWNER = "founder-sub-abc"
@@ -998,3 +999,84 @@ async def test_founder_choice_reaches_all_three_research_agents_but_not_synthesi
 
     # Synthesis still gets the built-in/admin default, NOT the founder's choice
     assert len(synthesis_requests) == 0  # Synthesis is fired by the engine, not here
+
+
+# ── Business model (optional run scoping) ────────────────────────────────────
+
+
+async def _start_with_model(core: FakeCoreGateway, business_model: str | None):
+    _seed_core(core)
+    return await _service(core).start_run(
+        owner_sub=OWNER, build_type="micro-saas", complexity=3, business_model=business_model
+    )
+
+
+async def test_the_chosen_business_model_reaches_the_brief_and_the_run():
+    core = FakeCoreGateway(
+        business_models=[
+            BusinessModel(
+                id="bm1",
+                key="marketplace-commission",
+                label="Marketplace commission",
+                description="A cut of transactions between two sides.",
+                active=True,
+            )
+        ]
+    )
+    run = await _start_with_model(core, "marketplace-commission")
+
+    brief = core.requested[0]["input_payload"]["brief"]
+    assert brief["business_model"]["key"] == "marketplace-commission"
+    assert brief["business_model"]["label"] == "Marketplace commission"
+    assert brief["business_model"]["description"] == "A cut of transactions between two sides."
+    # Stored on the run, so a past scout stays explicable.
+    assert run.business_model == "marketplace-commission"
+
+
+async def test_no_business_model_omits_the_key_entirely():
+    """Not `None`, not an empty object — absent. A null invites the model to
+    reason about a revenue model that was never chosen, which is the
+    invisible-input failure this plugin has had before."""
+    core = FakeCoreGateway()
+    run = await _start_with_model(core, None)
+
+    brief = core.requested[0]["input_payload"]["brief"]
+    assert "business_model" not in brief
+    assert run.business_model is None
+
+
+async def test_an_unknown_business_model_is_rejected_not_dropped():
+    core = FakeCoreGateway()
+    with pytest.raises(UnknownBusinessModelError):
+        await _start_with_model(core, "invented-model")
+
+
+async def test_an_inactive_business_model_is_rejected():
+    """Validated against the *active* list for the same reason the build type is:
+    an admin withdrawing a category must actually withdraw it."""
+    core = FakeCoreGateway(
+        business_models=[
+            BusinessModel(id="bm9", key="retired", label="Retired", active=False),
+        ]
+    )
+    with pytest.raises(UnknownBusinessModelError):
+        await _start_with_model(core, "retired")
+
+
+async def test_an_unseeded_table_still_allows_a_run_without_a_model():
+    """The picker is optional, so an empty table degrades the run rather than
+    breaking it — unlike build types, where an empty table blocks everything."""
+    core = FakeCoreGateway(business_models=[])
+    run = await _start_with_model(core, None)
+    assert run.business_model is None
+
+
+async def test_listing_business_models_returns_only_active_ones():
+    core = FakeCoreGateway(
+        business_models=[
+            BusinessModel(id="a", key="subscription", label="Subscription / SaaS", active=True),
+            BusinessModel(id="b", key="retired", label="Retired", active=False),
+        ]
+    )
+    keys = [m.key for m in await _service(core).list_business_models()]
+    assert keys == ["subscription"]

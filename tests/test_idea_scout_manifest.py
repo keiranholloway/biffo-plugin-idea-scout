@@ -44,7 +44,11 @@ EXPECTED_CAPABILITIES = {
 }
 
 OWNER_SCOPED_TABLES = {"idea_scout_runs", "idea_scout_candidates"}
-ADMIN_MANAGED_TABLES = {"idea_scout_build_types", "idea_scout_model_catalog"}
+ADMIN_MANAGED_TABLES = {
+    "idea_scout_build_types",
+    "idea_scout_business_models",
+    "idea_scout_model_catalog",
+}
 
 
 def _raw() -> dict:
@@ -62,9 +66,33 @@ def test_loads_through_the_sdk_model():
     assert manifest.version == "0.1.0"
 
 
-def test_declares_exactly_the_three_tables():
+def test_declares_exactly_the_expected_tables():
     manifest = load_manifest(MANIFEST_PATH)
     assert {t.name for t in manifest.tables} == OWNER_SCOPED_TABLES | ADMIN_MANAGED_TABLES
+
+
+def test_business_models_mirrors_build_types():
+    """The two admin-managed pickers must stay structurally identical — same
+    columns, same permission posture, same unique key. A divergence here means
+    one of them has drifted into a different contract by accident."""
+    raw = _raw()
+    tables = {t["name"]: t for t in raw["tables"]}
+    build, models = tables["idea_scout_build_types"], tables["idea_scout_business_models"]
+
+    assert [c["name"] for c in models["columns"]] == [c["name"] for c in build["columns"]]
+    assert [c["type"] for c in models["columns"]] == [c["type"] for c in build["columns"]]
+    assert models["permissions"] == build["permissions"]
+    assert models["indexes"][0]["columns"] == ["tenant_id", "key"]
+    assert models["indexes"][0]["unique"] is True
+
+
+def test_runs_carry_an_optional_business_model():
+    """Optional by design: a founder may have no preference, and NULL is a real
+    answer rather than missing data."""
+    runs = {t["name"]: t for t in _raw()["tables"]}["idea_scout_runs"]
+    column = next(c for c in runs["columns"] if c["name"] == "business_model")
+    assert column["type"] == "String(64)"
+    assert column["nullable"] is True
 
 
 def test_no_example_scaffolding_survives():

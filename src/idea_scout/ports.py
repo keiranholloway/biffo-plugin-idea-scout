@@ -16,7 +16,15 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from .models import AgentRunView, BuildType, Candidate, ModelCatalogEntry, ScoutRun, UserProfile
+from .models import (
+    AgentRunView,
+    BuildType,
+    BusinessModel,
+    Candidate,
+    ModelCatalogEntry,
+    ScoutRun,
+    UserProfile,
+)
 
 
 class CoreGateway(Protocol):
@@ -35,6 +43,12 @@ class CoreGateway(Protocol):
     async def list_build_types(self, *, active_only: bool = True) -> list[BuildType]:
         """The build-type categories offered in the run form, ascending by
         ``sort_order``. Admin-managed through generic CRUD."""
+        ...
+
+    async def list_business_models(self, *, active_only: bool = True) -> list[BusinessModel]:
+        """The business-model categories offered in the run form, ascending by
+        ``sort_order``. Admin-managed through generic CRUD, exactly like build
+        types."""
         ...
 
     async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
@@ -71,6 +85,7 @@ class CoreGateway(Protocol):
         research_run_ids: list[str],
         chain_id: str,
         research_model: str | None = None,
+        business_model: str | None = None,
     ) -> ScoutRun: ...
 
     async def get_run(self, *, owner_sub: str, run_id: str) -> ScoutRun | None: ...

@@ -24,6 +24,7 @@
 // stored". Nothing was wrong with the token — it carried `cognito:groups: [admin]`
 // and had 45 minutes left.
 const BUILD_TYPES_BASE = '/api/v1/plugins/idea-scout'
+const BUSINESS_MODELS_BASE = '/api/v1/plugins/idea-scout'
 const AGENTS_BASE = '/api/v1/plugins/idea-scout/admin'
 const MODEL_CATALOG_BASE = '/api/v1/plugins/idea-scout'
 
@@ -48,6 +49,13 @@ export interface BuildType {
 
 /** The fields an admin may set. `id` is Core's; `key` is immutable after create. */
 export type BuildTypeDraft = Omit<BuildType, 'id'>
+
+/** How an idea makes money. Structurally identical to BuildType by design — the
+ * two admin-managed pickers share their table shape, their permission posture
+ * and, here, their editor. Deliberately no valuation field: the taxonomy came
+ * from a corpus of asking prices with no confirmed sales in it. */
+export type BusinessModel = BuildType
+export type BusinessModelDraft = BuildTypeDraft
 
 export interface ChatAgent {
   agent_key: string
@@ -107,6 +115,16 @@ export function createApi(token: () => string | null) {
     update: (id: string, draft: BuildTypeDraft) =>
       request<BuildType>(token, 'PUT', `/build-types/${id}`, draft, BUILD_TYPES_BASE),
     remove: (id: string) => request<void>(token, 'DELETE', `/build-types/${id}`, undefined, BUILD_TYPES_BASE),
+
+    // Business models
+    listBusinessModels: () =>
+      request<BusinessModel[]>(token, 'GET', '/business-models', undefined, BUSINESS_MODELS_BASE),
+    createBusinessModel: (draft: BusinessModelDraft) =>
+      request<BusinessModel>(token, 'POST', '/business-models', draft, BUSINESS_MODELS_BASE),
+    updateBusinessModel: (id: string, draft: BusinessModelDraft) =>
+      request<BusinessModel>(token, 'PUT', `/business-models/${id}`, draft, BUSINESS_MODELS_BASE),
+    removeBusinessModel: (id: string) =>
+      request<void>(token, 'DELETE', `/business-models/${id}`, undefined, BUSINESS_MODELS_BASE),
 
     // Chat agents
     listChatAgents: () => request<ChatAgent[]>(token, 'GET', '/chat-agents', undefined, AGENTS_BASE),

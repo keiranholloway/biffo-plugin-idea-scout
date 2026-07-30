@@ -20,6 +20,11 @@ const PREFS = [
     label: "Regulated markets",
   },
 ];
+const BUSINESS_MODELS = [
+  { key: "subscription", label: "Subscription / SaaS", description: "Recurring payment for access." },
+  { key: "advertising", label: "Advertising / sponsorship", description: null },
+];
+
 const LEVELS = [
   { value: 1, label: "very small and niche" },
   { value: 3, label: "moderate" },
@@ -31,6 +36,7 @@ describe("RunForm", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -48,6 +54,7 @@ describe("RunForm", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -62,13 +69,14 @@ describe("RunForm", () => {
 
     // The third argument is the preference selection — empty here because
     // nothing is pre-selected, which is the deliberate default (#34).
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, []);
+    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], undefined, undefined);
   });
 
   it("shows the chosen type’s description, because it feeds the research brief", async () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -89,6 +97,7 @@ describe("RunForm", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -107,6 +116,7 @@ describe("RunForm", () => {
     render(
       <RunForm
         buildTypes={[]}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -130,6 +140,7 @@ describe("RunForm", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -146,6 +157,7 @@ describe("RunForm", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -164,6 +176,7 @@ describe("weight preferences (#34)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -183,6 +196,7 @@ describe("weight preferences (#34)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -196,15 +210,20 @@ describe("weight preferences (#34)", () => {
     await user.click(screen.getByLabelText("Recurring revenue"));
     await user.click(screen.getByRole("button", { name: "Run now" }));
 
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [
-      "recurring-revenue",
-    ]);
+    expect(onStart).toHaveBeenCalledWith(
+      "mobile-app",
+      3,
+      ["recurring-revenue"],
+      undefined,
+      undefined,
+    );
   });
 
   it("separates prefer from avoid, because they are different questions", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -226,6 +245,7 @@ describe("weight preferences (#34)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -243,6 +263,7 @@ describe("weight preferences (#34)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={[]}
         models={[]}
@@ -264,6 +285,7 @@ describe("the promise made to a founder about waiting (#27)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -287,6 +309,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={MODELS}
@@ -313,6 +336,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={MODELS}
@@ -330,6 +354,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={MODELS}
@@ -348,6 +373,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -367,6 +393,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={MODELS}
@@ -380,7 +407,7 @@ describe("Model picker (M3)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Run now" }));
 
     // With a model selected, should pass it
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], "m1");
+    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], "m1", undefined);
   });
 
   it("omits research_model rather than sending empty string", async () => {
@@ -388,6 +415,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[]}
@@ -401,7 +429,7 @@ describe("Model picker (M3)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Run now" }));
 
     // Without a model available/selected, should not include research_model param
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, []);
+    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], undefined, undefined);
   });
 });
 
@@ -414,6 +442,7 @@ describe("Model picker (M3)", () => {
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
         models={[
@@ -445,5 +474,110 @@ describe("Model picker (M3)", () => {
 
     // No model argument at all, so the server applies its own default — rather
     // than the client sending something it never had.
-    expect(onStart).toHaveBeenCalledWith("micro-saas", 3, []);
+    expect(onStart).toHaveBeenCalledWith("micro-saas", 3, [], undefined, undefined);
+});
+
+describe("business-model picker", () => {
+  it("is optional: a run starts with no model chosen, and sends undefined", async () => {
+    const onStart = vi.fn();
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={onStart}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByLabelText(/looking to build/i), "micro-saas");
+    await userEvent.click(screen.getByRole("button", { name: /run/i }));
+
+    expect(onStart).toHaveBeenCalledTimes(1);
+    // 5th argument is business_model. Undefined, not "" — the api layer omits
+    // the field entirely rather than sending an empty string.
+    expect(onStart.mock.calls[0][4]).toBeUndefined();
+  });
+
+  it("passes the chosen key through", async () => {
+    const onStart = vi.fn();
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={onStart}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByLabelText(/looking to build/i), "micro-saas");
+    await userEvent.selectOptions(screen.getByLabelText(/make money/i), "advertising");
+    await userEvent.click(screen.getByRole("button", { name: /run/i }));
+
+    expect(onStart.mock.calls[0][4]).toBe("advertising");
+  });
+
+  it("shows the description of the chosen model, and nothing when it has none", async () => {
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+    const picker = screen.getByLabelText(/make money/i);
+    await userEvent.selectOptions(picker, "subscription");
+    expect(screen.getByText("Recurring payment for access.")).toBeInTheDocument();
+
+    await userEvent.selectOptions(picker, "advertising");
+    expect(screen.queryByText("Recurring payment for access.")).not.toBeInTheDocument();
+  });
+
+  it("carries no price or multiple in any option or hint", async () => {
+    // The founder-facing guard: the taxonomy came from asking prices with no
+    // sold data, so a figure here would read as a valuation it is not. Mirrors
+    // tests/test_idea_scout_seed_business_models.py on the backend.
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        businessModels={BUSINESS_MODELS}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+    const picker = screen.getByLabelText(/make money/i);
+    await userEvent.selectOptions(picker, "subscription");
+    const money = /[$£€]|\b\d+(?:\.\d+)?\s*[x×](?![a-z0-9])/i;
+    expect(picker.parentElement?.textContent ?? "").not.toMatch(money);
+  });
+
+  it("hides entirely when the table is unseeded, rather than offering an empty picker", () => {
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        businessModels={[]}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[]}
+        selectedModel={null}
+        busy={false}
+        onStart={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText(/make money/i)).not.toBeInTheDocument();
+  });
 });
