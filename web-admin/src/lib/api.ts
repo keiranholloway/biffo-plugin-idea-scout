@@ -1,6 +1,6 @@
 // Admin API client for Idea Scout's admin panel: build types, agents, and model catalog.
 //
-// Two bases, and both are **Core's**, not this plugin's admin app:
+// Every base is under `/api/v1/plugins/idea-scout`, and that is not incidental:
 //
 // - BUILD_TYPES_BASE and MODEL_CATALOG_BASE: The CRUD routes for these tables
 //   are declared in `biffo.plugin.json`'s `api_routes`, so Core generates them
@@ -8,16 +8,23 @@
 //   table's own permissions: list/read open to any authenticated caller, create/
 //   update/delete admin-only.
 //
-// - AGENTS_BASE: Chat agents are routed through Core's admin route system at
-//   `/api/v1/admin/plugins/idea-scout/chat-agents`. These are the admin-editable
-//   prompts and models for the four agent roles (three research + one synthesis).
+// - AGENTS_BASE: this plugin's own admin app, which forwards to Core's admin
+//   routes server-side as the calling admin (`admin_app._core_request`).
 //
-// Calling them through this plugin's admin app instead would make the host call
-// itself and then forward on to Core — three hops, and a 500 when they outrun
-// the client's timeout. Ideation hit exactly that (biffo-template#652) and its
-// api.ts carries the same warning.
+// AGENTS_BASE used to point straight at `/api/v1/admin/plugins/idea-scout`, on
+// the reasoning that going through the admin app would make the host call itself
+// and forward to Core — three hops, biffo-template#652. That cost is real for a
+// SELF-call through the public path; the admin app calls Core directly, which is
+// one hop, and it is what ideation does.
+//
+// The reason it had to change is #69: **`/api/v1/admin/*` is not routed to Core
+// from the browser at all.** The CDN carries one API behaviour, `api/v1/plugins/*`;
+// everything else falls through to the portal origin, which answered these calls
+// with its own HTML shell and a 403. The panel then reported that as "no agents
+// stored". Nothing was wrong with the token — it carried `cognito:groups: [admin]`
+// and had 45 minutes left.
 const BUILD_TYPES_BASE = '/api/v1/plugins/idea-scout'
-const AGENTS_BASE = '/api/v1/admin/plugins/idea-scout'
+const AGENTS_BASE = '/api/v1/plugins/idea-scout/admin'
 const MODEL_CATALOG_BASE = '/api/v1/plugins/idea-scout'
 
 export class ApiError extends Error {

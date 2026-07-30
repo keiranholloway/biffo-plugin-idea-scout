@@ -47,8 +47,32 @@ export default function App() {
   const [models, setModels] = useState<ModelCatalogEntry[]>([])
 
   const [loaded, setLoaded] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // Keyed by concern, not one shared string. The four loaders fire concurrently
+  // and each used to call `setError(null)` on success, so a 200 from one wiped a
+  // failure from another purely on resolution order: agents 403'd, models
+  // succeeded a moment later, and the agents error vanished before it was ever
+  // rendered. That is half of why #69 presented as "no agents stored" with no
+  // error anywhere — the panel HAD the reason and threw it away.
+  const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+
+  const failed = useCallback((concern: string, message: string) => {
+    setErrors((prev) => ({ ...prev, [concern]: message }))
+  }, [])
+  const succeeded = useCallback((concern: string) => {
+    setErrors((prev) => {
+      if (!(concern in prev)) return prev
+      const next = { ...prev }
+      delete next[concern]
+      return next
+    })
+  }, [])
+  const error = Object.values(errors).join(' · ') || null
+
+  // Whether the agent loads FAILED, as opposed to returning nothing. The panel
+  // must not make a claim about the founder's data on the strength of a request
+  // that never succeeded.
+  const agentsFailed = 'agents' in errors || 'builtin-agents' in errors
 
   const api = createApi(() => idToken)
 
@@ -68,9 +92,10 @@ export default function App() {
   const refreshBuildTypes = useCallback(async () => {
     try {
       setTypes(forDisplay(await api.list()))
-      setError(null)
+      succeeded('build-types')
     } catch (err) {
-      setError(
+      failed(
+        'build-types',
         err instanceof ApiError && err.status === 403
           ? 'Your account is not in the admin group, so build types cannot be changed.'
           : err instanceof Error
@@ -83,18 +108,18 @@ export default function App() {
   const refreshAgents = useCallback(async () => {
     try {
       setAgents(await api.listChatAgents())
-      setError(null)
+      succeeded('agents')
     } catch (err) {
-      setError(`Failed to load agents: ${errorText(err)}`)
+      failed('agents', `Failed to load agents: ${errorText(err)}`)
     }
   }, [idToken])
 
   const refreshModels = useCallback(async () => {
     try {
       setModels(await api.listModelCatalog())
-      setError(null)
+      succeeded('models')
     } catch (err) {
-      setError(`Failed to load models: ${errorText(err)}`)
+      failed('models', `Failed to load models: ${errorText(err)}`)
     }
   }, [idToken])
 
@@ -102,9 +127,9 @@ export default function App() {
     try {
       const result = await api.getBuiltinAgents()
       setBuiltinAgents(result.agents)
-      setError(null)
+      succeeded('builtin-agents')
     } catch (err) {
-      setError(`Failed to load built-in agents: ${errorText(err)}`)
+      failed('builtin-agents', `Failed to load built-in agents: ${errorText(err)}`)
     }
   }, [idToken])
 
@@ -119,6 +144,8 @@ export default function App() {
 
   async function saveBuildType(draft: BuildTypeDraft) {
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       if (editing) await api.update(editing.id, draft)
       else await api.create(draft)
@@ -126,7 +153,7 @@ export default function App() {
       setCreating(false)
       await refreshBuildTypes()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save.')
+      failed('action', err instanceof Error ? err.message : 'Could not save.')
     } finally {
       setBusy(false)
     }
@@ -134,6 +161,8 @@ export default function App() {
 
   async function toggleActive(type: BuildType) {
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       await api.update(type.id, {
         key: type.key,
@@ -144,7 +173,7 @@ export default function App() {
       })
       await refreshBuildTypes()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update.')
+      failed('action', err instanceof Error ? err.message : 'Could not update.')
     } finally {
       setBusy(false)
     }
@@ -152,11 +181,13 @@ export default function App() {
 
   async function updateAgent(agentKey: string, updates: Partial<ChatAgent>) {
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       await api.updateChatAgent(agentKey, updates)
       await refreshAgents()
     } catch (err) {
-      setError(`Failed to update agent: ${errorText(err)}`)
+      failed('action', `Failed to update agent: ${errorText(err)}`)
     } finally {
       setBusy(false)
     }
@@ -165,11 +196,13 @@ export default function App() {
   async function deleteAgent(agentKey: string) {
     if (!window.confirm('Delete this agent? This action cannot be undone.')) return
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       await api.deleteChatAgent(agentKey)
       await refreshAgents()
     } catch (err) {
-      setError(`Failed to delete agent: ${errorText(err)}`)
+      failed('action', `Failed to delete agent: ${errorText(err)}`)
     } finally {
       setBusy(false)
     }
@@ -186,6 +219,8 @@ export default function App() {
     )
       return
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       // Create a stored copy of the built-in agent
       const payload = {
@@ -202,7 +237,7 @@ export default function App() {
       await api.createChatAgent(payload)
       await refreshAgents()
     } catch (err) {
-      setError(`Failed to store default: ${errorText(err)}`)
+      failed('action', `Failed to store default: ${errorText(err)}`)
     } finally {
       setBusy(false)
     }
@@ -210,11 +245,13 @@ export default function App() {
 
   async function createModel(entry: Omit<ModelCatalogEntry, 'id'>) {
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       await api.createModelCatalogEntry(entry)
       await refreshModels()
     } catch (err) {
-      setError(`Failed to create model: ${errorText(err)}`)
+      failed('action', `Failed to create model: ${errorText(err)}`)
     } finally {
       setBusy(false)
     }
@@ -222,11 +259,13 @@ export default function App() {
 
   async function updateModel(entryId: string, updates: Partial<ModelCatalogEntry>) {
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       await api.updateModelCatalogEntry(entryId, updates)
       await refreshModels()
     } catch (err) {
-      setError(`Failed to update model: ${errorText(err)}`)
+      failed('action', `Failed to update model: ${errorText(err)}`)
     } finally {
       setBusy(false)
     }
@@ -235,11 +274,13 @@ export default function App() {
   async function deleteModel(entryId: string) {
     if (!window.confirm('Delete this model? This action cannot be undone.')) return
     setBusy(true)
+    // A previous action's failure must not linger over a new attempt.
+    succeeded('action')
     try {
       await api.deleteModelCatalogEntry(entryId)
       await refreshModels()
     } catch (err) {
-      setError(`Failed to delete model: ${errorText(err)}`)
+      failed('action', `Failed to delete model: ${errorText(err)}`)
     } finally {
       setBusy(false)
     }
@@ -334,6 +375,7 @@ export default function App() {
               <AgentList
                 agents={agents}
                 builtinAgents={builtinAgents}
+                loadFailed={agentsFailed}
                 onUpdate={updateAgent}
                 onDelete={deleteAgent}
                 onStoreBuiltin={storeBuiltinAgent}

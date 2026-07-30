@@ -1,5 +1,16 @@
-"""Tests for the admin app's builtin-agents endpoint."""
+"""Tests for the admin app's routes.
 
+The paths here were ``/api/v1/admin/plugins/idea-scout/builtin-agents`` and every
+one of them passed, because ``TestClient(app)`` calls the app object directly —
+where a route declared at an absolute path is reachable. Mounted under
+``/api/v1/plugins/idea-scout/admin`` by the plugin host, that same declaration
+served the endpoint at
+``/api/v1/plugins/idea-scout/admin/api/v1/admin/plugins/idea-scout/builtin-agents``,
+which nothing calls and nothing could (#69). Relative paths are the only ones a
+mounted app can honour, so these assert relative paths.
+"""
+
+from biffo_plugin_sdk import ForwardedUser
 from fastapi.testclient import TestClient
 
 from idea_scout.admin_app import app
@@ -16,7 +27,7 @@ from idea_scout.definitions import (
 def test_builtin_agents_endpoint_exists():
     """The endpoint should respond with built-in agent data."""
     client = TestClient(app)
-    response = client.get("/api/v1/admin/plugins/idea-scout/builtin-agents")
+    response = client.get("/builtin-agents")
     assert response.status_code == 200
     data = response.json()
     assert "agents" in data
@@ -30,7 +41,7 @@ def test_builtin_agents_research_models_have_online_suffix():
     This test ensures the endpoint returns models with web capability.
     """
     client = TestClient(app)
-    response = client.get("/api/v1/admin/plugins/idea-scout/builtin-agents")
+    response = client.get("/builtin-agents")
     data = response.json()
 
     research_agents = [
@@ -52,7 +63,7 @@ def test_builtin_agents_models_match_constants():
     defaults so they cannot drift apart.
     """
     client = TestClient(app)
-    response = client.get("/api/v1/admin/plugins/idea-scout/builtin-agents")
+    response = client.get("/builtin-agents")
     data = response.json()
 
     agents_by_key = {a["agent_key"]: a for a in data["agents"]}
@@ -74,7 +85,7 @@ def test_builtin_agents_models_match_constants():
 def test_builtin_agents_have_real_prompts():
     """Built-in agents should return real prompt text, not placeholders."""
     client = TestClient(app)
-    response = client.get("/api/v1/admin/plugins/idea-scout/builtin-agents")
+    response = client.get("/builtin-agents")
     data = response.json()
 
     for agent in data["agents"]:
@@ -86,3 +97,155 @@ def test_builtin_agents_have_real_prompts():
         # No placeholder strings
         assert "Built-in prompt — stored row not found" not in agent["system_prompt"]
         assert "(Built-in default)" not in agent["system_prompt"]
+
+
+class TestTheStaticMountDoesNotShadowTheApi:
+    """The SPA mount is registered LAST, and that ordering is load-bearing.
+
+    Starlette matches routes in registration order and ``Mount("/")`` matches
+    every path, with no fall-through to a later route. This module used to mount
+    the built UI *above* its API routes, so even a correctly-pathed
+    ``/builtin-agents`` would have returned ``index.html``.
+
+    Every unit test in this file would still have passed, because in a source
+    checkout ``web-admin/dist`` does not exist and the mount is skipped entirely.
+    So this test builds the dist directory the deployment has.
+    """
+
+    def test_the_api_still_answers_when_the_spa_is_mounted(self, tmp_path, monkeypatch):
+        import importlib
+
+        dist = tmp_path / "idea-scout" / "web-admin" / "dist"
+        dist.mkdir(parents=True)
+        (dist / "index.html").write_text("<!doctype html><title>SPA</title>")
+        monkeypatch.setenv("BIFFO_PLUGINS_ROOT", str(tmp_path))
+
+        import idea_scout.admin_app as admin_app
+
+        reloaded = importlib.reload(admin_app)
+        try:
+            client = TestClient(reloaded.app)
+
+            # The mount is genuinely active — guard the guard, or the assertion
+            # below passes for the boring reason that nothing was mounted at all.
+            # `/`, not an arbitrary path: StaticFiles(html=True) serves
+            # index.html for a DIRECTORY and 404s an unknown key, so it is not an
+            # SPA history fallback and asking it for one proves nothing.
+            spa = client.get("/")
+            assert spa.status_code == 200
+            assert "<!doctype html>" in spa.text.lower()
+
+            # ...and the API is still reachable underneath it.
+            api = client.get("/builtin-agents")
+            assert api.status_code == 200, (
+                "the static mount is shadowing the API — it must be registered "
+                "after every route (#69)"
+            )
+            assert "agents" in api.json()
+        finally:
+            monkeypatch.delenv("BIFFO_PLUGINS_ROOT", raising=False)
+            importlib.reload(admin_app)
+
+
+class TestChatAgentProxyForwardsAsTheCallingAdmin:
+    """The proxy adds a hop and no privilege.
+
+    Core's ``require_admin`` authorises the real human on every forwarded call,
+    so the admin's own bearer token goes upstream — not this plugin's service
+    principal. Forwarding as the plugin would turn "an admin can edit prompts"
+    into "anyone who reaches this route can", which is the whole reason the
+    cross-plugin read was refused in the first place (biffo-template#909).
+    """
+
+    def test_the_admins_own_token_is_forwarded_upstream(self, monkeypatch):
+        import httpx as real_httpx
+
+        import idea_scout.admin_app as admin_app
+
+        seen: dict = {}
+
+        class _Resp:
+            status_code = 200
+            content = b"[]"
+
+            @staticmethod
+            def json():
+                return []
+
+        class _Client:
+            def __init__(self, *_args, **kwargs):
+                seen["timeout"] = kwargs.get("timeout")
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            async def request(self, method, url, json=None, headers=None):
+                seen["method"] = method
+                seen["url"] = url
+                seen["headers"] = headers
+                return _Resp()
+
+        monkeypatch.setattr(admin_app.httpx, "AsyncClient", _Client)
+        monkeypatch.setattr(admin_app, "_CORE_API_URL", "https://core.example.invalid")
+
+        admin = ForwardedUser(sub="admin-sub", groups=["admin"], token="the-admins-own-token")
+
+        import asyncio
+
+        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(
+            admin_app.list_chat_agents(admin=admin)
+        )
+
+        assert seen["headers"]["Authorization"] == "Bearer the-admins-own-token"
+        assert seen["url"] == (
+            "https://core.example.invalid/api/v1/admin/plugins/idea-scout/chat-agents"
+        )
+        # An explicit timeout, not httpx's unchosen 5s default against a Core
+        # that cold-starts in ~4.3s (biffo-template#652/#724).
+        assert seen["timeout"] == admin_app._CORE_TIMEOUT_SECONDS
+        assert real_httpx is not None
+
+    def test_cores_refusal_is_carried_through_with_its_reason(self, monkeypatch):
+        """A bare status is what made #69 unreadable — the panel could only say
+        "no agents stored" because nothing told it why."""
+        import asyncio
+
+        from fastapi import HTTPException
+
+        import idea_scout.admin_app as admin_app
+
+        class _Resp:
+            status_code = 403
+            content = b'{"detail":"Administrator access required"}'
+            text = '{"detail":"Administrator access required"}'
+
+        class _Client:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            async def request(self, *_a, **_k):
+                return _Resp()
+
+        monkeypatch.setattr(admin_app.httpx, "AsyncClient", _Client)
+        monkeypatch.setattr(admin_app, "_CORE_API_URL", "https://core.example.invalid")
+
+        admin = ForwardedUser(sub="admin-sub", groups=["admin"], token="t")
+
+        try:
+            asyncio.get_event_loop_policy().new_event_loop().run_until_complete(
+                admin_app.list_chat_agents(admin=admin)
+            )
+        except HTTPException as exc:
+            assert exc.status_code == 403
+            assert "Administrator access required" in str(exc.detail)
+        else:  # pragma: no cover - the point of the test
+            raise AssertionError("Core's 403 must reach the panel, not be swallowed")
