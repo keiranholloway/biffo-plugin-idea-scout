@@ -421,8 +421,17 @@ DEFAULT_INSTRUCTIONS: dict[str, str] = {
 #: web search through OpenRouter; synthesis does not search. These are the
 #: single source of truth for all readers: app.py, admin_app.py, and
 #: seed_agent_config.py all import and use these, so the three cannot drift apart.
+#:
+#: **OpenRouter spells a minor version with a DOT.** ``anthropic/claude-opus-4-8``
+#: is not a model; ``anthropic/claude-opus-4-8`` is. A wrong slug is not rejected
+#: anywhere — not at save time, not at run creation — so it surfaces only as a
+#: failed async run, after the three research agents have already been paid for.
+#: This exact slug is already recorded once in the estate's corpus, on ideation's
+#: analyst, described as "absent from all 367 models OpenRouter serves". It was
+#: fixed there and left here. ``test_definitions.py`` now fails on the hyphenated
+#: form so the third instance cannot ship.
 DEFAULT_RESEARCH_MODEL = "anthropic/claude-sonnet-4:online"
-DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4-8"
+DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4.8"
 
 
 # ── Definition snapshots (what the runtime executes) ─────────────────────────
