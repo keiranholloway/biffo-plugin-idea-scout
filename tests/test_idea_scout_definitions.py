@@ -215,3 +215,63 @@ def test_the_synthesis_prompt_names_the_dedup_key_the_brief_actually_sends():
     `previously_suggested`, and synthesis has to be told what it means (#49).
     """
     assert "previously_suggested" in d.SYNTHESIS_INSTRUCTIONS
+
+
+class TestModelSlugsAreSpelledTheWayOpenRouterSpellsThem:
+    """A wrong model slug is rejected by nothing and costs three paid runs.
+
+    Nothing validates a model id — not the admin panel at save time, not Core at
+    run creation. A bad slug surfaces only when the async run fails, which for a
+    scout is *after* the three research agents have been paid for and only the
+    synthesis call is left.
+
+    `anthropic/claude-opus-4-8` shipped as this plugin's synthesis default. It is
+    not a model. OpenRouter spells a minor version with a **dot**:
+    `anthropic/claude-opus-4.8`. The estate's corpus already records this exact
+    string once, on ideation's analyst, as "absent from all 367 models OpenRouter
+    serves" — fixed there, left here, and found again only by checking before
+    spending rather than by any gate.
+
+    Deliberately a SHAPE check, not a network call: asserting against a live
+    OpenRouter would make this suite depend on a third party and a credential,
+    and it would fail for reasons that have nothing to do with this repo.
+    """
+
+    def test_no_anthropic_slug_hyphenates_a_minor_version(self) -> None:
+        import re
+
+        from idea_scout.definitions import DEFAULT_RESEARCH_MODEL, DEFAULT_SYNTHESIS_MODEL
+
+        for slug in (DEFAULT_RESEARCH_MODEL, DEFAULT_SYNTHESIS_MODEL):
+            base = slug.split(":", 1)[0]  # drop an :online / :batch suffix
+            assert not re.search(r"-\d+-\d+$", base), (
+                f"{slug!r} hyphenates a minor version. OpenRouter spells these with a dot "
+                f"(claude-opus-4.8, not claude-opus-4-8), and nothing validates a model id "
+                f"before a run pays for three research agents."
+            )
+
+    def test_the_dead_slug_reaches_no_seeded_row(self) -> None:
+        """Named explicitly, because the shape rule above is easy to satisfy
+        while reintroducing the string somewhere it still ships.
+
+        Asserts the VALUES that reach the database, not the source text: the
+        first version of this test read the file and failed on the comment that
+        documents the dead slug, which is exactly the documentation worth
+        keeping.
+        """
+        from idea_scout.definitions import (
+            DEFAULT_RESEARCH_MODEL,
+            DEFAULT_SYNTHESIS_MODEL,
+            seed_config_payloads,
+        )
+
+        shipped = {DEFAULT_RESEARCH_MODEL, DEFAULT_SYNTHESIS_MODEL} | {
+            row["model"]
+            for row in seed_config_payloads(
+                research_model=DEFAULT_RESEARCH_MODEL,
+                synthesis_model=DEFAULT_SYNTHESIS_MODEL,
+            )
+        }
+        assert not any("claude-opus-4-8" in model for model in shipped), (
+            f"claude-opus-4-8 is not a model OpenRouter serves; use claude-opus-4.8. Got: {shipped}"
+        )
