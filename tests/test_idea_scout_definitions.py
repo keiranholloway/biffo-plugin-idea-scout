@@ -218,19 +218,23 @@ def test_the_synthesis_prompt_names_the_dedup_key_the_brief_actually_sends():
 
 
 class TestModelSlugsAreSpelledTheWayOpenRouterSpellsThem:
-    """A wrong model slug is rejected by nothing and costs three paid runs.
+    """Prefer the canonical slug OpenRouter publishes. A HYGIENE guard.
 
-    Nothing validates a model id — not the admin panel at save time, not Core at
-    run creation. A bad slug surfaces only when the async run fails, which for a
-    scout is *after* the three research agents have been paid for and only the
-    synthesis call is left.
+    **This test's original justification was wrong and is corrected here.** It
+    claimed `anthropic/claude-opus-4-8` "is not a model" and that a run would fail
+    after three paid research calls. The estate's own agent-run ledger refutes
+    that: **26 runs on that exact slug, $3.74 charged, 24 completed**, including
+    every successful Idea Scout synthesis to date. OpenRouter normalises it.
 
-    `anthropic/claude-opus-4-8` shipped as this plugin's synthesis default. It is
-    not a model. OpenRouter spells a minor version with a **dot**:
-    `anthropic/claude-opus-4.8`. The estate's corpus already records this exact
-    string once, on ideation's analyst, as "absent from all 367 models OpenRouter
-    serves" — fixed there, left here, and found again only by checking before
-    spending rather than by any gate.
+    What remains true, and is why the guard is kept: the hyphenated form is
+    **absent from OpenRouter's published `/v1/models` list**, so relying on it is
+    relying on undocumented normalisation that can stop without notice — and
+    nothing validates a model id anywhere, so the failure would surface only as a
+    failed async run.
+
+    So this asserts a convention, not a correctness property. The assertion
+    messages say that, because a guard that overstates its own stakes teaches the
+    next reader something false.
 
     Deliberately a SHAPE check, not a network call: asserting against a live
     OpenRouter would make this suite depend on a third party and a credential,
@@ -245,9 +249,10 @@ class TestModelSlugsAreSpelledTheWayOpenRouterSpellsThem:
         for slug in (DEFAULT_RESEARCH_MODEL, DEFAULT_SYNTHESIS_MODEL):
             base = slug.split(":", 1)[0]  # drop an :online / :batch suffix
             assert not re.search(r"-\d+-\d+$", base), (
-                f"{slug!r} hyphenates a minor version. OpenRouter spells these with a dot "
-                f"(claude-opus-4.8, not claude-opus-4-8), and nothing validates a model id "
-                f"before a run pays for three research agents."
+                f"{slug!r} hyphenates a minor version. Use the dotted form OpenRouter "
+                f"publishes (claude-opus-4.8). The hyphenated form does work — it is "
+                f"normalised, and this estate has 26 billed runs on it — but it is unlisted, "
+                f"so it is undocumented behaviour rather than a contract."
             )
 
     def test_the_dead_slug_reaches_no_seeded_row(self) -> None:
@@ -273,5 +278,6 @@ class TestModelSlugsAreSpelledTheWayOpenRouterSpellsThem:
             )
         }
         assert not any("claude-opus-4-8" in model for model in shipped), (
-            f"claude-opus-4-8 is not a model OpenRouter serves; use claude-opus-4.8. Got: {shipped}"
+            f"claude-opus-4-8 is an unlisted alias rather than a published model id; "
+            f"use claude-opus-4.8. It is not broken — see the class docstring. Got: {shipped}"
         )
