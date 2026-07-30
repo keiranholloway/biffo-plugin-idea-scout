@@ -11,12 +11,14 @@ import {
   forDisplay,
   type BuildType,
   type BuildTypeDraft,
+  type BusinessModel,
+  type BusinessModelDraft,
   type ChatAgent,
   type ModelCatalogEntry,
 } from './lib/api'
 import { getCurrentSession } from './lib/auth'
 
-type Tab = 'build-types' | 'agents' | 'models'
+type Tab = 'build-types' | 'business-models' | 'agents' | 'models'
 
 function errorText(e: unknown): string {
   if (e instanceof Error) return e.message
@@ -38,6 +40,9 @@ export default function App() {
   const [types, setTypes] = useState<BuildType[]>([])
   const [editing, setEditing] = useState<BuildType | null>(null)
   const [creating, setCreating] = useState(false)
+  const [bizModels, setBizModels] = useState<BusinessModel[]>([])
+  const [editingModel, setEditingModel] = useState<BusinessModel | null>(null)
+  const [creatingModel, setCreatingModel] = useState(false)
 
   // Agents state
   const [agents, setAgents] = useState<ChatAgent[]>([])
@@ -89,6 +94,27 @@ export default function App() {
     }
   }, [])
 
+  const refreshBusinessModels = useCallback(async () => {
+    try {
+      setBizModels(forDisplay(await api.listBusinessModels()))
+      succeeded('business-models')
+    } catch (err) {
+      failed(
+        'business-models',
+        err instanceof ApiError && err.status === 403
+          ? 'Your account is not in the admin group, so business models cannot be changed.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not load business models.',
+      )
+    }
+    // `[idToken]`, deliberately — NOT `[api, ...]`. `api` is rebuilt on every
+    // render (line ~82), so depending on it makes this callback's identity churn,
+    // which re-fires the mount effect that depends on it, which sets state, which
+    // renders again: "Maximum update depth exceeded". Every sibling refresh*
+    // callback keys off idToken for the same reason.
+  }, [idToken])
+
   const refreshBuildTypes = useCallback(async () => {
     try {
       setTypes(forDisplay(await api.list()))
@@ -136,11 +162,19 @@ export default function App() {
   useEffect(() => {
     if (idToken == null) return
     void refreshBuildTypes()
+    void refreshBusinessModels()
     void refreshAgents()
     void refreshBuiltinAgents()
     void refreshModels()
     setLoaded(true)
-  }, [idToken, refreshBuildTypes, refreshAgents, refreshBuiltinAgents, refreshModels])
+  }, [
+    idToken,
+    refreshBuildTypes,
+    refreshBusinessModels,
+    refreshAgents,
+    refreshBuiltinAgents,
+    refreshModels,
+  ])
 
   async function saveBuildType(draft: BuildTypeDraft) {
     setBusy(true)
@@ -154,6 +188,41 @@ export default function App() {
       await refreshBuildTypes()
     } catch (err) {
       failed('action', err instanceof Error ? err.message : 'Could not save.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveBusinessModel(draft: BusinessModelDraft) {
+    setBusy(true)
+    succeeded('action')
+    try {
+      if (editingModel) await api.updateBusinessModel(editingModel.id, draft)
+      else await api.createBusinessModel(draft)
+      setEditingModel(null)
+      setCreatingModel(false)
+      await refreshBusinessModels()
+    } catch (err) {
+      failed('action', err instanceof Error ? err.message : 'Could not save.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function toggleModelActive(model: BusinessModel) {
+    setBusy(true)
+    succeeded('action')
+    try {
+      await api.updateBusinessModel(model.id, {
+        key: model.key,
+        label: model.label,
+        description: model.description,
+        sort_order: model.sort_order,
+        active: !(model.active ?? false),
+      })
+      await refreshBusinessModels()
+    } catch (err) {
+      failed('action', err instanceof Error ? err.message : 'Could not update.')
     } finally {
       setBusy(false)
     }
@@ -313,6 +382,12 @@ export default function App() {
               Build Types
             </button>
             <button
+              className={`admin-tab ${tab === 'business-models' ? 'admin-tab--active' : ''}`}
+              onClick={() => setTab('business-models')}
+            >
+              Business Models
+            </button>
+            <button
               className={`admin-tab ${tab === 'agents' ? 'admin-tab--active' : ''}`}
               onClick={() => setTab('agents')}
             >
@@ -359,6 +434,50 @@ export default function App() {
                   onCancel={() => {
                     setEditing(null)
                     setCreating(false)
+                  }}
+                />
+              )}
+            </section>
+          )}
+
+          {tab === 'business-models' && (
+            <section className="admin-section">
+              <h2>Business Models</h2>
+              <p className="muted">
+                How an idea makes money. Optional on the run form — a founder may have no
+                preference, and an empty list here degrades a run rather than blocking it, unlike
+                build types. Deactivating hides a model from new runs while existing runs keep
+                referencing it by key, so prefer deactivating over deleting. Descriptions reach the
+                research brief; keep prices and multiples out of them, since the taxonomy came from
+                asking prices with no confirmed sales behind them.
+              </p>
+
+              <BuildTypeList
+                types={bizModels}
+                busy={busy}
+                emptyMessage="No business models yet — the run form simply omits the picker until one exists."
+                onEdit={(m) => {
+                  setCreatingModel(false)
+                  setEditingModel(m)
+                }}
+                onToggleActive={(m) => void toggleModelActive(m)}
+              />
+
+              {!creatingModel && editingModel == null && (
+                <button type="button" className="primary" onClick={() => setCreatingModel(true)}>
+                  Add a business model
+                </button>
+              )}
+
+              {(creatingModel || editingModel != null) && (
+                <BuildTypeForm
+                  existing={editingModel}
+                  busy={busy}
+                  noun="business model"
+                  onSave={(draft) => void saveBusinessModel(draft)}
+                  onCancel={() => {
+                    setEditingModel(null)
+                    setCreatingModel(false)
                   }}
                 />
               )}

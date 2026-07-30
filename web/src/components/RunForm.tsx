@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 
-import type { BuildType, ComplexityLevel, ModelOption, Preference } from '../lib/api'
+import type {
+  BuildType,
+  BusinessModel,
+  ComplexityLevel,
+  ModelOption,
+  Preference,
+} from '../lib/api'
 
 /** The run setup: what to look for, and how ambitious.
  *
@@ -12,6 +18,7 @@ import type { BuildType, ComplexityLevel, ModelOption, Preference } from '../lib
  */
 export function RunForm({
   buildTypes,
+  businessModels,
   complexityLevels,
   preferences,
   models,
@@ -20,14 +27,25 @@ export function RunForm({
   onStart,
 }: {
   buildTypes: BuildType[]
+  businessModels: BusinessModel[]
   complexityLevels: ComplexityLevel[]
   preferences: Preference[]
   models: ModelOption[]
   selectedModel: string | null
   busy: boolean
-  onStart: (buildType: string, complexity: number, preferences: string[], research_model?: string) => void
+  onStart: (
+    buildType: string,
+    complexity: number,
+    preferences: string[],
+    research_model?: string,
+    business_model?: string,
+  ) => void
 }) {
   const [buildType, setBuildType] = useState<string>('')
+  // Empty means "no preference", which is a real answer — so unlike buildType
+  // this never gates submit. Defaulting it would scope every run from an input
+  // the founder never made.
+  const [businessModel, setBusinessModel] = useState<string>('')
   const [complexity, setComplexity] = useState<number>(3)
   // Nothing is pre-selected, deliberately. A default here would shape every
   // result from an input the founder never made — the invisible-input failure
@@ -48,6 +66,7 @@ export function RunForm({
   }, [selectedModel, models])
 
   const selected = buildTypes.find((t) => t.key === buildType)
+  const selectedModelKind = businessModels.find((m) => m.key === businessModel)
   const level = complexityLevels.find((l) => l.value === complexity)
 
   if (buildTypes.length === 0) {
@@ -70,12 +89,17 @@ export function RunForm({
       onSubmit={(event) => {
         event.preventDefault()
         if (buildType !== '') {
-          // Only include research_model if it's actually selected (not empty string)
-          if (modelId) {
-            onStart(buildType, complexity, [...chosen], modelId)
-          } else {
-            onStart(buildType, complexity, [...chosen])
-          }
+          // Both trailing arguments are optional and independent. `undefined`
+          // rather than `''` for an unmade choice, so the api layer omits the
+          // field entirely instead of sending an empty string the server would
+          // have to interpret.
+          onStart(
+            buildType,
+            complexity,
+            [...chosen],
+            modelId || undefined,
+            businessModel || undefined,
+          )
         }
       }}
     >
@@ -100,6 +124,27 @@ export function RunForm({
           <span className="field-hint">{selected.description}</span>
         )}
       </label>
+
+      {businessModels.length > 0 && (
+        <label className="field">
+          <span className="field-label">How should it make money?</span>
+          <select
+            value={businessModel}
+            onChange={(event) => setBusinessModel(event.target.value)}
+            disabled={busy}
+          >
+            <option value="">No preference</option>
+            {businessModels.map((model) => (
+              <option key={model.key} value={model.key}>
+                {model.label}
+              </option>
+            ))}
+          </select>
+          {selectedModelKind?.description != null && (
+            <span className="field-hint">{selectedModelKind.description}</span>
+          )}
+        </label>
+      )}
 
       <label className="field">
         <span className="field-label">How ambitious?</span>

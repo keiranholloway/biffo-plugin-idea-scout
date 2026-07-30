@@ -105,6 +105,12 @@
           "type": "String(200)",
           "nullable": true,
           "description": "The OpenRouter model slug the research agents ran on (e.g., 'anthropic/claude-opus:online'). NULL means the admin's configured model or built-in default was used — it is not missing data. Stored as the slug (not the catalog entry id) so the run remains explicable if the catalog entry is deleted."
+        },
+        {
+          "name": "business_model",
+          "type": "String(64)",
+          "nullable": true,
+          "description": "The idea_scout_business_models key the founder scoped this run to (e.g. 'subscription'), or NULL for 'no preference'. Unlike build_type this is optional: a founder may genuinely not care how an idea monetises, and defaulting it would shape results from an input they never made. A plain key, not a foreign key — plugin tables cannot declare FKs — and the key rather than the label so relabelling never orphans a past run."
         }
       ],
       "indexes": [
@@ -313,6 +319,79 @@
       }
     },
     {
+      "name": "idea_scout_business_models",
+      "columns": [
+        {
+          "name": "key",
+          "type": "String(64)",
+          "nullable": false,
+          "description": "Stable identifier stored on a run (e.g. 'subscription'). Relabelling must not orphan existing runs, so the key is what a run references."
+        },
+        {
+          "name": "label",
+          "type": "String(100)",
+          "nullable": false,
+          "description": "What the founder sees in the business-model picker (e.g. 'Subscription / SaaS')."
+        },
+        {
+          "name": "description",
+          "type": "Text",
+          "nullable": true,
+          "description": "One line on what this revenue mechanism means and what it implies for scope — shown under the label in the picker, and included in the research brief so the agents scope to it. Deliberately carries NO valuation, multiple or price figure: the corpus this taxonomy was derived from holds asking prices only, never confirmed sales, so any number here would read to a founder as a valuation it is not. Guarded by tests/test_idea_scout_seed_business_models.py."
+        },
+        {
+          "name": "active",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Whether this model is offered today. Nullable because the generated migration DDL does not apply declared defaults — treat NULL as false; every create request sets it explicitly."
+        },
+        {
+          "name": "sort_order",
+          "type": "Integer",
+          "nullable": true,
+          "description": "Display order in the picker, ascending. Ties fall back to label."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_idea_scout_business_models_tenant_key",
+          "columns": [
+            "tenant_id",
+            "key"
+          ],
+          "unique": true
+        }
+      ],
+      "permissions": {
+        "list": {
+          "allowed": true,
+          "required_role": []
+        },
+        "read": {
+          "allowed": true,
+          "required_role": []
+        },
+        "create": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        },
+        "update": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        },
+        "delete": {
+          "allowed": true,
+          "required_role": [
+            "admin"
+          ]
+        }
+      }
+    },
+    {
       "name": "idea_scout_model_catalog",
       "columns": [
         {
@@ -387,6 +466,41 @@
     }
   ],
   "api_routes": [
+    {
+      "method": "GET",
+      "path": "/business-models",
+      "table": "idea_scout_business_models",
+      "operation": "list",
+      "description": "List business-model categories. Readable by any authenticated caller — the founder's run form needs it — while only an admin can change the list."
+    },
+    {
+      "method": "GET",
+      "path": "/business-models/{id}",
+      "table": "idea_scout_business_models",
+      "operation": "read",
+      "description": "Get a single business-model category."
+    },
+    {
+      "method": "POST",
+      "path": "/business-models",
+      "table": "idea_scout_business_models",
+      "operation": "create",
+      "description": "Add a business-model category (admin only)."
+    },
+    {
+      "method": "PUT",
+      "path": "/business-models/{id}",
+      "table": "idea_scout_business_models",
+      "operation": "update",
+      "description": "Update a business-model category — relabel, re-describe, reorder, or toggle active (admin only)."
+    },
+    {
+      "method": "DELETE",
+      "path": "/business-models/{id}",
+      "table": "idea_scout_business_models",
+      "operation": "delete",
+      "description": "Remove a business-model category (admin only). Past runs keep the key they stored."
+    },
     {
       "method": "GET",
       "path": "/build-types",

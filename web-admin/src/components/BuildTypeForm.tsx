@@ -5,6 +5,9 @@ import type { BuildType, BuildTypeDraft } from '../lib/api'
 interface Props {
   existing: BuildType | null
   busy: boolean
+  /** What this editor is editing, for copy only. The two admin-managed pickers
+   * share a table shape and therefore share this form. */
+  noun?: string
   onSave: (draft: BuildTypeDraft) => void
   onCancel: () => void
 }
@@ -12,7 +15,7 @@ interface Props {
 /** A URL-safe, stable identifier — what a run stores, so it must not drift. */
 const KEY_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-export function BuildTypeForm({ existing, busy, onSave, onCancel }: Props) {
+export function BuildTypeForm({ existing, busy, onSave, onCancel, noun = 'build type' }: Props) {
   const [key, setKey] = useState(existing?.key ?? '')
   const [label, setLabel] = useState(existing?.label ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
@@ -37,7 +40,7 @@ export function BuildTypeForm({ existing, busy, onSave, onCancel }: Props) {
         })
       }}
     >
-      <h2>{existing ? `Edit ${existing.label}` : 'New build type'}</h2>
+      <h2>{existing ? `Edit ${existing.label}` : `New ${noun}`}</h2>
 
       <label>
         Label

@@ -6,6 +6,7 @@ import {
   ApiError,
   createApi,
   type BuildType,
+  type BusinessModel,
   type Candidate,
   type ComplexityLevel,
   type ModelOption,
@@ -28,6 +29,7 @@ export default function App() {
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   const [buildTypes, setBuildTypes] = useState<BuildType[]>([]);
+  const [businessModels, setBusinessModels] = useState<BusinessModel[]>([]);
   const [preferences, setPreferences] = useState<Preference[]>([]);
   const [complexityLevels, setComplexityLevels] = useState<ComplexityLevel[]>(
     [],
@@ -65,14 +67,16 @@ export default function App() {
     if (idToken == null) return;
     void Promise.all([
       api.current.getBuildTypes(),
+      api.current.getBusinessModels(),
       api.current.getComplexityLevels(),
       api.current.getPreferences(),
       api.current.getModels(),
       api.current.getLastUsedModel(),
       api.current.listRuns(),
     ])
-      .then(([types, levels, prefs, modelList, lastUsed, existing]) => {
+      .then(([types, bizModels, levels, prefs, modelList, lastUsed, existing]) => {
         setBuildTypes(types);
+        setBusinessModels(bizModels);
         setComplexityLevels(levels);
         setPreferences(prefs);
         setModels(modelList);
@@ -135,11 +139,18 @@ export default function App() {
     complexity: number,
     prefs: string[] = [],
     research_model?: string,
+    business_model?: string,
   ) {
     setStarting(true);
     setError(null);
     try {
-      const run = await api.current.startRun(buildType, complexity, prefs, research_model);
+      const run = await api.current.startRun(
+        buildType,
+        complexity,
+        prefs,
+        research_model,
+        business_model,
+      );
       setCurrent(run);
       setCandidates([]);
       setRuns(await api.current.listRuns());
@@ -237,13 +248,14 @@ export default function App() {
         {current == null && loaded ? (
           <RunForm
             buildTypes={buildTypes}
+            businessModels={businessModels}
             complexityLevels={complexityLevels}
             preferences={preferences}
             models={models}
             selectedModel={selectedModel}
             busy={starting}
-            onStart={(type, complexity, prefs, model) =>
-              void startRun(type, complexity, prefs, model)
+            onStart={(type, complexity, prefs, model, bizModel) =>
+              void startRun(type, complexity, prefs, model, bizModel)
             }
           />
         ) : current == null ? null : (

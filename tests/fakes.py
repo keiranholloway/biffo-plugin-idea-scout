@@ -24,6 +24,7 @@ from idea_scout.models import (
     RUN_FAILED,
     AgentRunView,
     BuildType,
+    BusinessModel,
     Candidate,
     ModelCatalogEntry,
     ScoutRun,
@@ -164,6 +165,7 @@ class FakeCoreGateway:
         *,
         profile: UserProfile | None = None,
         build_types: list[BuildType] | None = None,
+        business_models: list[BusinessModel] | None = None,
         configs: dict[str, dict[str, Any]] | None = None,
         model_catalog: list[ModelCatalogEntry] | None = None,
     ) -> None:
@@ -172,6 +174,17 @@ class FakeCoreGateway:
             build_types
             if build_types is not None
             else [BuildType(id="bt1", key="micro-saas", label="MicroSaaS", active=True)]
+        )
+        # Defaults to one active model so a test that does not care can still
+        # exercise the optional picker; pass [] to simulate an unseeded table.
+        self.business_models = (
+            business_models
+            if business_models is not None
+            else [
+                BusinessModel(
+                    id="bm1", key="subscription", label="Subscription / SaaS", active=True
+                )
+            ]
         )
         self.configs = configs or {}
         self.model_catalog = model_catalog or []
@@ -201,6 +214,12 @@ class FakeCoreGateway:
         if active_only:
             types = [t for t in types if t.active]
         return list(types)
+
+    async def list_business_models(self, *, active_only: bool = True) -> list[BusinessModel]:
+        models = self.business_models
+        if active_only:
+            models = [m for m in models if m.active]
+        return list(models)
 
     async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
         entries = self.model_catalog
@@ -238,6 +257,7 @@ class FakeCoreGateway:
         research_run_ids: list[str],
         chain_id: str,
         research_model: str | None = None,
+        business_model: str | None = None,
     ) -> ScoutRun:
         run = ScoutRun(
             id=self._id("run"),
@@ -251,6 +271,7 @@ class FakeCoreGateway:
             preferences=list(preferences),
             created_at=f"2026-07-27T00:00:{len(self.runs):02d}Z",
             research_model=research_model,
+            business_model=business_model,
         )
         self.runs[run.id] = run
         return run
