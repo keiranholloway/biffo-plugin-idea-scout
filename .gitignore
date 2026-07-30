@@ -24,3 +24,7 @@ terraform.rc
 .env.*
 !.env.example
 *.tsbuildinfo
+
+# Per-unit-of-work worktrees (AGENTS.md §1). Git-ignored so they are never
+# committed and never double-scanned by a linter or type-checker.
+.worktrees/
