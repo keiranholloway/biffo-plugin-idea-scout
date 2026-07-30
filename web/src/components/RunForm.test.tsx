@@ -297,10 +297,16 @@ describe("Model picker (M3)", () => {
     );
 
     const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
-    const options = Array.from(select.options).map((opt) => opt.textContent);
-    expect(options).toContain("Sonnet");
-    expect(options).toContain("Opus");
-    expect(options).toHaveLength(2);
+    // Count the MODEL options — those with a value. The empty-valued option is
+    // "no choice made", not an invented model, and it exists so the select can
+    // never display a model it has not got. The property this test defends is
+    // unchanged: the models offered are exactly the ones the API returned.
+    const modelOptions = Array.from(select.options)
+      .filter((opt) => opt.value !== "")
+      .map((opt) => opt.textContent);
+    expect(modelOptions).toContain("Sonnet");
+    expect(modelOptions).toContain("Opus");
+    expect(modelOptions).toHaveLength(2);
   });
 
   it("pre-selects the last-used model when there is one", () => {
@@ -397,4 +403,47 @@ describe("Model picker (M3)", () => {
     // Without a model available/selected, should not include research_model param
     expect(onStart).toHaveBeenCalledWith("mobile-app", 3, []);
   });
+});
+
+  it("never displays a model as chosen when none is", async () => {
+    // With no last-used model and no `is_default` in the catalog, `modelId` is
+    // empty. A select whose value matches no option renders the FIRST one, so the
+    // form claimed a model it did not hold — and submitted the wrong thing.
+    // The explicit empty option makes "nothing chosen" look like nothing chosen.
+    const onStart = vi.fn();
+    render(
+      <RunForm
+        buildTypes={BUILD_TYPES}
+        complexityLevels={LEVELS}
+        preferences={PREFS}
+        models={[
+          {
+            id: "m1",
+            model_id: "anthropic/claude-sonnet-4:online",
+            label: "Claude Sonnet 4 (web)",
+            is_default: false,
+          },
+          {
+            id: "m2",
+            model_id: "deepseek/deepseek-v4-flash:online",
+            label: "DeepSeek V4 Flash",
+            is_default: false,
+          },
+        ]}
+        selectedModel={null}
+        busy={false}
+        onStart={onStart}
+      />,
+    );
+
+    const modelSelect = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
+    expect(modelSelect.value).toBe("");
+    expect(modelSelect.options[modelSelect.selectedIndex]?.text).not.toBe("Claude Sonnet 4 (web)");
+
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "micro-saas");
+    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
+
+    // No model argument at all, so the server applies its own default — rather
+    // than the client sending something it never had.
+    expect(onStart).toHaveBeenCalledWith("micro-saas", 3, []);
 });
