@@ -29,6 +29,16 @@ function mergeAgentRows(storedAgents: ChatAgent[], builtinAgents: ChatAgent[]): 
 interface AgentListProps {
   agents: ChatAgent[]
   builtinAgents: ChatAgent[]
+  /**
+   * Whether either agent request FAILED, as distinct from returning nothing.
+   *
+   * "No agents stored" is a claim about the founder's configuration. Without
+   * this flag it was made on the strength of two requests that came back 403,
+   * which is how #69 looked like an empty table rather than a broken panel —
+   * the fourth time this estate has rendered a failed fetch as an empty state,
+   * and the second in this plugin after #53.
+   */
+  loadFailed?: boolean
   onUpdate: (key: string, updates: Partial<ChatAgent>) => void
   onDelete: (key: string) => void
   onStoreBuiltin: (agent: ChatAgent) => void
@@ -38,6 +48,7 @@ interface AgentListProps {
 export function AgentList({
   agents,
   builtinAgents,
+  loadFailed = false,
   onUpdate,
   onDelete,
   onStoreBuiltin,
@@ -64,6 +75,18 @@ export function AgentList({
   }
 
   const rows = mergeAgentRows(agents, builtinAgents)
+
+  if (loadFailed) {
+    // Deliberately NOT the empty state. The request failed; what is stored is
+    // unknown, and saying "none" here is a false statement about the founder's
+    // data rather than a missing one. The banner above carries the reason.
+    return (
+      <p className="admin-error">
+        Could not load the agents, so what is configured is unknown. This is not the same as
+        having none — see the error above.
+      </p>
+    )
+  }
 
   if (rows.length === 0) {
     return <p className="admin-empty">No agents stored, and no built-in defaults reported.</p>

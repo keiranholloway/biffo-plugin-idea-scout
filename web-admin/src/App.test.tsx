@@ -467,4 +467,54 @@ describe('Idea Scout admin panel', () => {
       })
     })
   })
+
+  describe('when the agent requests fail (#69)', () => {
+    // The panel reported "No agents stored, and no built-in defaults reported"
+    // while both requests were coming back 403. Two separate causes, both here.
+
+    it('does not claim the founder has no agents when the request failed', async () => {
+      listChatAgents.mockRejectedValue(new Error('403: Forbidden'))
+      getBuiltinAgents.mockRejectedValue(new Error('403: Forbidden'))
+
+      render(<App />)
+      await userEvent.click(await screen.findByRole('button', { name: /agents/i }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/Could not load the agents/i)).toBeInTheDocument()
+      })
+      // The empty state is a claim about the founder's configuration. It must
+      // not be made on the strength of a request that never succeeded.
+      expect(screen.queryByText(/No agents stored/i)).not.toBeInTheDocument()
+    })
+
+    it('does not let a successful load erase another load\'s failure', async () => {
+      // The four loaders fire concurrently against one shared error string, and
+      // every success used to call setError(null). The models call returning 200
+      // a moment after the agents call returned 403 wiped the only evidence.
+      listChatAgents.mockRejectedValue(new Error('403: Forbidden'))
+      getBuiltinAgents.mockRejectedValue(new Error('403: Forbidden'))
+      listModelCatalog.mockResolvedValue([MODEL_WEB_CAPABLE])
+      listBuildTypes.mockResolvedValue([MICRO_SAAS])
+
+      render(<App />)
+
+      await waitFor(() => {
+        expect(screen.getByText(/Failed to load agents/i)).toBeInTheDocument()
+      })
+    })
+
+    it('still says nothing is stored when the request genuinely returns none', async () => {
+      // Guard the guard: the fix must not turn every empty table into an error.
+      listChatAgents.mockResolvedValue([])
+      getBuiltinAgents.mockResolvedValue({ agents: [] })
+
+      render(<App />)
+      await userEvent.click(await screen.findByRole('button', { name: /agents/i }))
+
+      await waitFor(() => {
+        expect(screen.getByText(/No agents stored/i)).toBeInTheDocument()
+      })
+      expect(screen.queryByText(/Could not load the agents/i)).not.toBeInTheDocument()
+    })
+  })
 })
