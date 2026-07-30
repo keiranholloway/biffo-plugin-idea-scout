@@ -126,6 +126,15 @@ export function RunForm({
             onChange={(event) => setModelId(event.target.value)}
             disabled={busy}
           >
+            {/* An explicit unselected option, so the select can never DISPLAY a
+                model it has not got. A `<select>` whose value matches no option
+                renders the first one, which is how a founder saw "Claude Sonnet 4
+                (web)" while the state was empty. That is the same
+                shows-a-value-it-does-not-have shape as the empty-vs-error
+                conflations already fixed in this plugin (#53, #69) — and here it
+                also blocked the run. Reachable whenever there is no last-used
+                model and no catalog entry flagged `is_default`. */}
+            <option value="">Use the built-in default</option>
             {models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.label}

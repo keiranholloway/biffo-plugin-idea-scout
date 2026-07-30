@@ -129,7 +129,21 @@ export function createApi(getIdToken: () => string | null) {
     getComplexityLevels: () => request<ComplexityLevel[]>('GET', '/complexity-levels'),
     getPreferences: () => request<Preference[]>('GET', '/preferences'),
     getModels: () => request<ModelOption[]>('GET', '/models'),
-    getLastUsedModel: () => request<string | null>('GET', '/models/last-used'),
+    // The server returns an OBJECT — `{"research_model": "…"}` or
+    // `{"research_model": null}` — so unwrap it. This was typed as a bare
+    // `string | null` and `request<T>` casts blindly (`as T`), so TypeScript had
+    // nothing to check it against and the mismatch reached the founder:
+    // `selectedModel` became the object, an object is truthy, `modelId` became
+    // the object, no `<option value>` matched it so the browser displayed the
+    // FIRST model as if chosen, and submitting sent the object — which the API
+    // rejected with 422 `string_type`, `"input":{"research_model":null}`.
+    //
+    // So a founder who loaded the page and pressed Run now without touching the
+    // dropdown could not start a scout at all, and the form looked complete.
+    getLastUsedModel: async (): Promise<string | null> => {
+      const body = await request<{ research_model: string | null }>('GET', '/models/last-used')
+      return body?.research_model ?? null
+    },
     startRun: (build_type: string, complexity: number, preferences: string[] = [], research_model?: string) => {
       const body: Record<string, unknown> = { build_type, complexity, preferences }
       if (research_model != null) body.research_model = research_model
