@@ -120,12 +120,15 @@ async def _core_request(
 
 @app.on_event("startup")
 async def _seed_agent_config() -> None:
-    """Seed the agent config on startup, tolerating Core transient failures.
+    """Seed the agent config on startup, tolerating a failed seed.
 
     Seeding guarantees rows exist so _resolve_agent can fail loudly on a missing
-    row rather than silently using the fallback. If Core is briefly unavailable
-    at cold start, the app continues anyway — the absence will fail loudly when
-    a founder tries to run.
+    row rather than silently using the fallback. If the seed fails for any reason,
+    the app continues anyway — the absence will fail loudly when a founder tries
+    to run.
+
+    The log line reports Core's actual response rather than guessing at a cause;
+    see ``app.py``'s counterpart for what the guess cost (biffo-template#924).
     """
     try:
         research_model = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
@@ -141,8 +144,8 @@ async def _seed_agent_config() -> None:
         _LOGGER.info(f"Seeded {created} new agent config row(s); {already_present} already present")
     except CoreHttpError as exc:
         _LOGGER.exception(
-            "Failed to seed agent config at startup (Core may be unavailable). "
-            "Agent runs will fail loudly when started: %s",
+            "Failed to seed agent config at startup. Core's response: %s. "
+            "Agent runs will fail loudly when started until the rows exist.",
             exc,
         )
 
