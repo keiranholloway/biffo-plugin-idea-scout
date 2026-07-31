@@ -86,12 +86,19 @@ app = FastAPI(title="Idea Scout", docs_url=None, redoc_url=None)
 
 @app.on_event("startup")
 async def _seed_agent_config() -> None:
-    """Seed the agent config on startup, tolerating Core transient failures.
+    """Seed the agent config on startup, tolerating a failed seed.
 
     Seeding guarantees rows exist so _resolve_agent can fail loudly on a missing
-    row rather than silently using the fallback. If Core is briefly unavailable
-    at cold start, the plugin continues anyway — the absence will fail loudly when
-    a founder tries to run.
+    row rather than silently using the fallback. If the seed fails for any reason,
+    the plugin continues anyway — the absence will fail loudly when a founder
+    tries to run.
+
+    **The log line must not name a cause it has not established.** It used to say
+    "Core may be unavailable", and on 2026-07-31 that was read as the diagnosis:
+    Core was up and had answered, with a 500 from its own unique constraint
+    (biffo-template#924). The speculation cost the first theory. ``CoreHttpError``
+    already carries the method, path, status and response body — report those and
+    let them say what happened.
     """
     try:
         transport = CoreTransport(founder_token="")
@@ -105,8 +112,8 @@ async def _seed_agent_config() -> None:
         _LOGGER.info(f"Seeded {created} new agent config row(s); {already_present} already present")
     except CoreHttpError as exc:
         _LOGGER.exception(
-            "Failed to seed agent config at startup (Core may be unavailable). "
-            "Agent runs will fail loudly when started: %s",
+            "Failed to seed agent config at startup. Core's response: %s. "
+            "Agent runs will fail loudly when started until the rows exist.",
             exc,
         )
 

@@ -9,6 +9,8 @@ right statuses.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import Iterator
 from dataclasses import replace
 
@@ -588,3 +590,38 @@ def test_form_options_reads_core_sequentially_not_concurrently(
         f"form-options held {core.max_concurrent_reads} Core reads at once; "
         "await them in sequence rather than gathering."
     )
+
+
+def test_a_failed_startup_seed_logs_cores_actual_response(monkeypatch, caplog):
+    """The startup-seed error must report what happened, not guess at a cause.
+
+    On 2026-07-31 this line read "(Core may be unavailable)" while Core was up
+    and had answered — with a 500 from its own unique constraint on a concurrent
+    self-seed (biffo-template#924). The speculation was taken as the diagnosis
+    and cost the first theory. ``CoreHttpError`` already carries the method,
+    path, status and body; the log must surface them and claim nothing else.
+    """
+    from idea_scout import app as app_module
+    from idea_scout.adapter import CoreHttpError
+
+    detail = (
+        "POST /api/v1/internal/plugins/me/config/seed -> 500: "
+        '{"detail":"duplicate key value violates unique constraint '
+        '\\"uq_plugin_chat_agent_key\\""}'
+    )
+
+    class _Exploding:
+        def __init__(self, *args: object, **kwargs: object) -> None: ...
+
+        async def seed_own_config(self, *, config: object) -> object:
+            raise CoreHttpError(detail)
+
+    monkeypatch.setattr(app_module, "CoreTransport", lambda **kwargs: object())
+    monkeypatch.setattr(app_module, "CoreHttpGateway", _Exploding)
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(app_module._seed_agent_config())
+
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert detail in logged, logged
+    assert "may be unavailable" not in logged, logged

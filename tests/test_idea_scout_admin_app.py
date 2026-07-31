@@ -263,3 +263,35 @@ def test_the_history_route_is_proxied_too():
     assert "/chat-agents/{agent_key}/history" in paths, (
         f"history is not proxied; the panel's base would 404. Routes: {sorted(paths)}"
     )
+
+
+def test_a_failed_startup_seed_logs_cores_actual_response(monkeypatch, caplog):
+    """The admin app's startup seed reports Core's response, same as app.py's.
+
+    Two apps run the same handler shape, so the misleading "(Core may be
+    unavailable)" wording lived in both (biffo-template#924). Both are asserted,
+    because a fix to one is not a fix to the other.
+    """
+    import asyncio
+    import logging
+
+    from idea_scout import admin_app as admin_module
+    from idea_scout.adapter import CoreHttpError
+
+    detail = "POST /api/v1/internal/plugins/me/config/seed -> 500: uq_plugin_chat_agent_key"
+
+    class _Exploding:
+        def __init__(self, *args: object, **kwargs: object) -> None: ...
+
+        async def seed_own_config(self, *, config: object) -> object:
+            raise CoreHttpError(detail)
+
+    monkeypatch.setattr(admin_module, "CoreTransport", lambda **kwargs: object())
+    monkeypatch.setattr(admin_module, "CoreHttpGateway", _Exploding)
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(admin_module._seed_agent_config())
+
+    logged = "\n".join(record.getMessage() for record in caplog.records)
+    assert detail in logged, logged
+    assert "may be unavailable" not in logged, logged
