@@ -26,6 +26,12 @@ jobs:
   lint:
     name: Lint
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # A self-hosted spot runner reclaimed mid-job leaves the job HANGING rather
+    # than failing, and with no timeout it burns the 360-minute default before
+    # anyone is told. On 2026-07-30 five jobs across two PRs died this way with
+    # "The runner has received a shutdown signal". 20m is several times the
+    # slowest job observed anywhere in this estate (Playwright E2E, 3.7m).
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: astral-sh/setup-uv@v5
@@ -38,6 +44,7 @@ jobs:
   typecheck:
     name: Type Check
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: astral-sh/setup-uv@v5
@@ -49,6 +56,7 @@ jobs:
   test:
     name: Test
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: astral-sh/setup-uv@v5
@@ -64,6 +72,7 @@ jobs:
   validate-manifest:
     name: Validate biffo.plugin.json
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: astral-sh/setup-uv@v5
@@ -104,6 +113,7 @@ jobs:
   security-secrets:
     name: Secret Scan
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: read
@@ -150,6 +160,7 @@ jobs:
   security-deps:
     name: Dependency Audit
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: astral-sh/setup-uv@v5
@@ -161,6 +172,7 @@ jobs:
   frontend:
     name: Frontend (lint, types, test, build)
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
@@ -192,6 +204,7 @@ jobs:
   admin-frontend:
     name: Admin frontend (lint, types, test, build)
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web-admin
