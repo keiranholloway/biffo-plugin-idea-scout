@@ -36,6 +36,26 @@ dev = [
   "pip-audit>=2.7.3",
 ]
 
+[tool.uv]
+# `cryptography` arrives transitively — `biffo-plugin-sdk[user-serving]` pulls
+# `pyjwt[crypto]`, which pulls `cryptography`. Nothing here declares it, so
+# there is no floor to raise and the constraint has to be stated.
+#
+# CVE-2026-69247 / GHSA-g6cj-pr64-35w5 (2026-08-03): `pkcs7_decrypt_*` reported
+# the outcome of unwrapping a RecipientInfo's `encryptedKey` in four
+# distinguishable ways — one of them disclosing the recovered key length — and
+# the same distinction was observable by timing. That is a Bleichenbacher oracle
+# against the content-encryption key for anything that decrypts
+# attacker-supplied EnvelopedData and answers adaptively. Introduced in 44.0.0,
+# fixed in 50.0.0 (RFC 3218: the content-encryption algorithm is resolved before
+# the private key is used, so every failure path does identical work).
+#
+# This plugin does not call the PKCS#7 APIs, so the constraint is preventative
+# rather than a live exposure — but `pip-audit` reads the resolved tree, not the
+# reachable code. Do not remove it as unnecessary: without it the lockfile
+# resolves 49.0.0 and `scripts/py-dependency-audit.sh` reports a vulnerability.
+constraint-dependencies = ["cryptography>=50.0.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
