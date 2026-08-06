@@ -30,6 +30,23 @@
 # the gate was green because it was not looking, and "we checked and it is
 # clean" read identically to "we never checked".
 #
+# ## Discovery, not a fixed path list (#1270)
+#
+# A fixed sweep of "workspace root + `_skeletons/**`" is itself the same shape
+# of gap, one level further down: it reports clean on any pnpm-lock.yaml
+# outside that pair, and an INSTANCE grows trees this repo never has —
+# vendored plugin frontends under `services/*/web/`, a second app under
+# `web-admin/`, or any other nested pnpm project. Found live:
+# `services/ideation/web/pnpm-lock.yaml` sat on two advisory-range packages
+# (one high) while this exact gate stayed green, because it never looked
+# there. Ten lockfiles in that repo; a fixed sweep covered nine.
+#
+# So every pnpm-lock.yaml under the repo is DISCOVERED by walking from the git
+# root, rather than assumed from a hardcoded list — see "Discover the trees"
+# below. Nothing here still means the estate's layouts differ; discovery
+# covers a repo the day it grows a new one, instead of the day someone
+# remembers to add a path.
+#
 # ## This file is distributed verbatim (#743)
 #
 # Both skeletons and every existing sibling/plugin repo hold a BYTE-IDENTICAL
@@ -39,10 +56,9 @@
 # every satellite was born with the original defect and reddened its required JS
 # check on any registry hiccup.
 #
-# It therefore takes its target from the CURRENT WORKING DIRECTORY — the CI
-# job's `working-directory` — rather than assuming a repo layout: `.` is the
-# root workspace here, `apps/frontend` in a sibling, and the `_skeletons/**`
-# sweep below simply finds nothing outside this repo. Keep it layout-agnostic,
+# It therefore takes its WORKSPACE tree from the CURRENT WORKING DIRECTORY —
+# the CI job's `working-directory` — rather than assuming a repo layout: `.` is
+# the root workspace here, `apps/frontend` in a sibling. Keep it layout-agnostic,
 # or the copies stop being interchangeable and `shared-sync.sh --check` starts
 # reporting drift that is really divergence.
 #
@@ -89,16 +105,29 @@ audit_dir() {
     #     trusting it — the workspace audit had silently stopped working.)
     # shellcheck disable=SC2086
     out="$(cd "$dir" 2>/dev/null && pnpm audit --json $extra 2>/dev/null)"
+    # Stamped the instant the registry answered, not when the run started.
+    # `pnpm audit` asks the LIVE registry, so its verdict is a function of what
+    # had been ingested at this moment — two runs of the same tree minutes apart
+    # can legitimately disagree (#1269). Without this stamp a green is not
+    # falsifiable, and a red appearing hours after a merge reads as "someone
+    # broke dev" when nothing in the tree moved.
+    seen_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
     if printf '%s' "$out" | jq -e '.metadata.vulnerabilities' >/dev/null 2>&1; then
       high="$(printf '%s' "$out" | jq '.metadata.vulnerabilities.high // 0')"
       crit="$(printf '%s' "$out" | jq '.metadata.vulnerabilities.critical // 0')"
+      mod="$(printf '%s' "$out" | jq '.metadata.vulnerabilities.moderate // 0')"
+      low="$(printf '%s' "$out" | jq '.metadata.vulnerabilities.low // 0')"
+      total="$(printf '%s' "$out" | jq '.metadata.totalDependencies // 0')"
       if [ "$((high + crit))" -gt 0 ]; then
-        echo "::error::${label}: ${crit} critical + ${high} high advisory(ies)."
+        echo "::error::${label}: ${crit} critical + ${high} high advisory(ies) across ${total} package(s); registry answered ${seen_at}."
         printf '%s' "$out" | jq '.advisories // .metadata.vulnerabilities' 2>/dev/null | head -c 4000
         return 1
       fi
-      echo "${label}: no high/critical advisories."
+      # A bare "no advisories" is not falsifiable. State the population, the
+      # severities that did NOT block, and when the registry was asked, so a
+      # reader can tell a clean tree from a tree nobody looked at properly.
+      echo "${label}: 0 critical, 0 high across ${total} package(s) (${mod} moderate, ${low} low — reported, not blocking); registry answered ${seen_at}."
       return 0
     fi
 
@@ -107,19 +136,85 @@ audit_dir() {
     [ "$attempt" -lt "$attempts" ] && sleep "$((attempt * 3))"
   done
 
-  echo "::warning::${label}: audit could not run after ${attempts} attempts (the registry returned a non-JSON/error response); treating as INCONCLUSIVE and not blocking. Advisory scanning was NOT performed for this tree — see #591."
+  echo "::error::${label}: audit could not run after ${attempts} attempts (the registry returned a non-JSON/error response). Advisory scanning was NOT performed for this tree, so this is INCONCLUSIVE and BLOCKS — a gate that cannot see its input must not report clean (#1269, #591)."
   inconclusive=$((inconclusive + 1))
   return 0
 }
 
-# The workspace itself.
-audit_dir "." "pnpm audit (workspace)" "" || failed=1
+# ## Discover the trees (#1270)
+#
+# Walk from the git root — not the CWD this script happens to run from — so a
+# vendored tree anywhere in the repo is found regardless of where the CI job's
+# `working-directory` points. Excludes `node_modules` (installed, not source),
+# `.git`, and `.worktrees` (other agents' in-progress checkouts, git-ignored
+# and not part of this run).
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+if [ -z "$REPO_ROOT" ]; then
+  echo "::error::js-dependency-audit: not inside a git repository ('git rev-parse --show-toplevel' failed). Discovery cannot walk a tree it cannot find." >&2
+  exit 2
+fi
 
-# Every scaffolding tree with its own lockfile. Discovered rather than listed,
-# so a new skeleton is covered the day it lands instead of the day someone
-# remembers to add it here.
-for lock in $(find _skeletons -name pnpm-lock.yaml -not -path '*/node_modules/*' 2>/dev/null | sort); do
-  audit_dir "$(dirname "$lock")" "pnpm audit ($(dirname "$lock"))" "--ignore-workspace" || failed=1
+WORKSPACE_ABS=$(pwd -P)
+
+# shellcheck disable=SC2016
+ALL_LOCKS=$(find "$REPO_ROOT" \
+  \( -name node_modules -o -name .git -o -name .worktrees \) -prune -o \
+  -type f -name pnpm-lock.yaml -print 2>/dev/null | sort)
+
+# Fail CLOSED, not open, on an empty discovery (#1270). Zero trees — including
+# no lockfile at the workspace root itself — means discovery is broken (a
+# wrong root, an over-eager prune, a repo layout this script has never seen),
+# not that the repo has nothing to audit. Every repo this script is wired into
+# ships at least one pnpm-lock.yaml, so an empty result here is a configuration
+# error, not a clean pass — the same posture as `verify.sh`'s `ci_has()`
+# (#1218) and `ci-wiring-audit.sh`'s empty-map check: "This audit checked
+# nothing. That is a configuration error, not a pass." Exit 2 (not 1), the
+# estate's "cannot tell" code, distinct from "found a vulnerability" (1) and
+# "clean" (0) — CI treats any non-zero as a failed step either way.
+if [ -z "$ALL_LOCKS" ]; then
+  printf '::error::js-dependency-audit: discovered ZERO pnpm-lock.yaml trees under %s.\n' "$REPO_ROOT" >&2
+  printf 'This audit checked nothing. That is a configuration error, not a pass — see #1270.\n' >&2
+  exit 2
+fi
+
+# Print what was scanned BEFORE auditing, so the list survives even if a later
+# tree crashes the run — a bare green must be a falsifiable claim, not
+# something a reader has to infer or re-enumerate by hand.
+tree_count=$(printf '%s\n' "$ALL_LOCKS" | wc -l | tr -d ' ')
+printf 'js-dependency-audit: discovered %s pnpm-lock.yaml tree(s):\n' "$tree_count"
+for lock in $ALL_LOCKS; do
+  dir=$(dirname "$lock")
+  dir_abs=$(cd "$dir" 2>/dev/null && pwd -P)
+  case "$dir_abs" in
+    "$REPO_ROOT") rel=. ;;
+    "$REPO_ROOT"/*) rel=${dir_abs#"$REPO_ROOT"/} ;;
+    *) rel="$dir_abs" ;;
+  esac
+  if [ "$dir_abs" = "$WORKSPACE_ABS" ]; then
+    printf '  - %s (workspace)\n' "$rel"
+  else
+    printf '  - %s\n' "$rel"
+  fi
+done
+
+# Audit each discovered tree. The workspace's own lockfile is audited WITHOUT
+# --ignore-workspace, so pnpm resolves it normally; every other discovered
+# lockfile is a separate, vendored project and needs the flag, or pnpm walks
+# up, finds the workspace, and silently audits THAT instead — reporting clean
+# for a tree it never looked at, which is this exact defect one level down.
+for lock in $ALL_LOCKS; do
+  dir=$(dirname "$lock")
+  dir_abs=$(cd "$dir" 2>/dev/null && pwd -P)
+  case "$dir_abs" in
+    "$REPO_ROOT") rel=. ;;
+    "$REPO_ROOT"/*) rel=${dir_abs#"$REPO_ROOT"/} ;;
+    *) rel="$dir_abs" ;;
+  esac
+  if [ "$dir_abs" = "$WORKSPACE_ABS" ]; then
+    audit_dir "$dir" "pnpm audit (workspace: ${rel})" "" || failed=1
+  else
+    audit_dir "$dir" "pnpm audit (${rel})" "--ignore-workspace" || failed=1
+  fi
 done
 
 if [ "$failed" -ne 0 ]; then
@@ -127,7 +222,15 @@ if [ "$failed" -ne 0 ]; then
 fi
 
 if [ "$inconclusive" -ne 0 ]; then
-  echo "${inconclusive} tree(s) could not be audited; see warnings above."
+  # Exit 2, not 1: "could not determine" is a different fact from "found a real
+  # advisory", and conflating them sends whoever reads the red looking for a
+  # vulnerability that may not exist. Same three-valued contract as
+  # scripts/claim.sh (0 free / 1 taken / 2 cannot tell) and the zero-trees exit
+  # above. Until #1269 this returned 0 -- biffo-plugin-ideation rode that path
+  # on EVERY run, permanently green while scanning nothing.
+  echo "::error::${inconclusive} tree(s) could not be audited; see the errors above. Failing closed."
+  exit 2
 fi
 
+echo "js-dependency-audit: audited ${tree_count} tree(s), 0 blocking findings."
 exit 0
