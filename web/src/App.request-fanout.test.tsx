@@ -21,6 +21,7 @@ const track = <T,>(name: string, value: T) => () => {
 vi.mock("./lib/auth", () => ({
   getCurrentSession: () =>
     Promise.resolve({ getIdToken: () => ({ getJwtToken: () => "test-token" }) }),
+  getFreshIdToken: () => Promise.resolve("test-token"),
 }));
 
 vi.mock("./lib/api", async (importOriginal) => {
