@@ -55,6 +55,29 @@ export async function getCurrentSession(): Promise<CognitoUserSession | null> {
   })
 }
 
+/**
+ * A currently-valid ID token for the shared portal session, or null.
+ *
+ * Call this per request; NEVER snapshot the JWT. A `CognitoUserSession` is an
+ * immutable value object — `getIdToken()` hands back the same `CognitoIdToken`
+ * forever, and `isValid()` is true right up to the expiry second. So a client
+ * built from `createApi(() => sessionCapturedAtMount.getIdToken().getJwtToken())`
+ * sends a token frozen at mount whose remaining life is whatever was left on the
+ * *cached* token — possibly seconds. Once it lapses every call 401s for the life
+ * of the page and nothing recovers it but a reload (biffo-plugin-ideation#69).
+ * This app polls every 5s (`POLL_MS`) for the life of an in-flight run, so a
+ * frozen token is not a hypothetical — a run left open across an expiry stalls.
+ *
+ * Re-resolving instead is cheap and self-healing: `pool.getCurrentUser()` returns
+ * a fresh `CognitoUser` with no in-memory session, so `getSession()` re-reads
+ * storage every time and swaps in a new token via the refresh token exactly when
+ * the stored one has expired. No network call while the token is still good.
+ */
+export async function getFreshIdToken(): Promise<string | null> {
+  const session = await getCurrentSession()
+  return session ? session.getIdToken().getJwtToken() : null
+}
+
 /** Test-only: reset the memoised pool. */
 export function __resetUserPoolForTests(): void {
   userPool = null

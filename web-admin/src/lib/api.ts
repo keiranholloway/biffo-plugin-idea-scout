@@ -80,13 +80,13 @@ export interface ModelCatalogEntry {
 }
 
 async function request<T>(
-  token: () => string | null,
+  getIdToken: () => string | null | Promise<string | null>,
   method: string,
   path: string,
   body?: unknown,
   base: string = BUILD_TYPES_BASE,
 ): Promise<T> {
-  const idToken = token()
+  const idToken = await getIdToken()
   const res = await fetch(`${base}${path}`, {
     method,
     headers: {
@@ -106,7 +106,7 @@ async function request<T>(
   return (await res.json()) as T
 }
 
-export function createApi(token: () => string | null) {
+export function createApi(token: () => string | null | Promise<string | null>) {
   return {
     // Build types
     list: () => request<BuildType[]>(token, 'GET', '/build-types', undefined, BUILD_TYPES_BASE),

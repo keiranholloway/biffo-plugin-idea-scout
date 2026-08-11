@@ -125,9 +125,9 @@ export interface CandidatesResponse extends RunState {
 
 export type Api = ReturnType<typeof createApi>
 
-export function createApi(getIdToken: () => string | null) {
+export function createApi(getIdToken: () => string | null | Promise<string | null>) {
   async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const token = getIdToken()
+    const token = await getIdToken()
     const res = await fetch(`${API_BASE}${path}`, {
       method,
       headers: {

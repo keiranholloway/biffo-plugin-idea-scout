@@ -16,7 +16,7 @@ import {
   type ChatAgent,
   type ModelCatalogEntry,
 } from './lib/api'
-import { getCurrentSession } from './lib/auth'
+import { getCurrentSession, getFreshIdToken } from './lib/auth'
 
 type Tab = 'build-types' | 'business-models' | 'agents' | 'models'
 
@@ -32,7 +32,10 @@ function errorText(e: unknown): string {
  * - Models: CRUD for the model catalog with web_capable visibility
  */
 export default function App() {
-  const [idToken, setIdToken] = useState<string | null>(null)
+  // Created once and never rebuilt: `getFreshIdToken` is a stable module-level
+  // function that re-resolves the session on every call, so the client itself
+  // never goes stale — nothing here snapshots a token (biffo-plugin-ideation#69).
+  const [api] = useState(() => createApi(getFreshIdToken))
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
   const [tab, setTab] = useState<Tab>('build-types')
 
@@ -79,15 +82,14 @@ export default function App() {
   // that never succeeded.
   const agentsFailed = 'agents' in errors || 'builtin-agents' in errors
 
-  const api = createApi(() => idToken)
-
+  // Only decides whether to show the panel or the "not signed in" message.
+  // Requests themselves never read this — `api` re-resolves the token per
+  // call via `getFreshIdToken`, so this snapshot going stale doesn't matter.
   useEffect(() => {
     let cancelled = false
     void getCurrentSession().then((session) => {
       if (cancelled) return
-      const token = session?.getIdToken().getJwtToken() ?? null
-      setIdToken(token)
-      setSignedIn(token != null)
+      setSignedIn(session != null)
     })
     return () => {
       cancelled = true
@@ -108,12 +110,10 @@ export default function App() {
             : 'Could not load business models.',
       )
     }
-    // `[idToken]`, deliberately — NOT `[api, ...]`. `api` is rebuilt on every
-    // render (line ~82), so depending on it makes this callback's identity churn,
-    // which re-fires the mount effect that depends on it, which sets state, which
-    // renders again: "Maximum update depth exceeded". Every sibling refresh*
-    // callback keys off idToken for the same reason.
-  }, [idToken])
+    // `api` is created once (useState initializer) and never changes identity,
+    // so depending on it is safe — unlike the old `() => idToken` closure,
+    // this doesn't churn on every render.
+  }, [api])
 
   const refreshBuildTypes = useCallback(async () => {
     try {
@@ -129,7 +129,7 @@ export default function App() {
             : 'Could not load build types.',
       )
     }
-  }, [idToken])
+  }, [api])
 
   const refreshAgents = useCallback(async () => {
     try {
@@ -138,7 +138,7 @@ export default function App() {
     } catch (err) {
       failed('agents', `Failed to load agents: ${errorText(err)}`)
     }
-  }, [idToken])
+  }, [api])
 
   const refreshModels = useCallback(async () => {
     try {
@@ -147,7 +147,7 @@ export default function App() {
     } catch (err) {
       failed('models', `Failed to load models: ${errorText(err)}`)
     }
-  }, [idToken])
+  }, [api])
 
   const refreshBuiltinAgents = useCallback(async () => {
     try {
@@ -157,10 +157,10 @@ export default function App() {
     } catch (err) {
       failed('builtin-agents', `Failed to load built-in agents: ${errorText(err)}`)
     }
-  }, [idToken])
+  }, [api])
 
   useEffect(() => {
-    if (idToken == null) return
+    if (signedIn !== true) return
     void refreshBuildTypes()
     void refreshBusinessModels()
     void refreshAgents()
@@ -168,7 +168,7 @@ export default function App() {
     void refreshModels()
     setLoaded(true)
   }, [
-    idToken,
+    signedIn,
     refreshBuildTypes,
     refreshBusinessModels,
     refreshAgents,

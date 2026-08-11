@@ -28,16 +28,23 @@ const createModelCatalogEntry = vi.fn()
 const updateModelCatalogEntry = vi.fn()
 const deleteModelCatalogEntry = vi.fn()
 
+const getFreshIdToken = vi.fn(() => Promise.resolve('test-token'))
+
 vi.mock('./lib/auth', () => ({
   getCurrentSession: () =>
     Promise.resolve({ getIdToken: () => ({ getJwtToken: () => 'test-token' }) }),
+  getFreshIdToken,
 }))
+
+const createApiCalls: Array<() => string | null | Promise<string | null>> = []
 
 vi.mock('./lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api')>()
   return {
     ...actual,
-    createApi: () => ({
+    createApi: (getIdToken: () => string | null | Promise<string | null>) => {
+      createApiCalls.push(getIdToken)
+      return {
       list: listBuildTypes,
       create: createBuildType,
       update: updateBuildType,
@@ -55,7 +62,8 @@ vi.mock('./lib/api', async (importOriginal) => {
       createModelCatalogEntry,
       updateModelCatalogEntry,
       deleteModelCatalogEntry,
-    }),
+      }
+    },
   }
 })
 
@@ -170,6 +178,8 @@ const MODEL_NOT_WEB_CAPABLE = {
 
 describe('Idea Scout admin panel', () => {
   beforeEach(() => {
+    createApiCalls.length = 0
+    getFreshIdToken.mockReset().mockResolvedValue('test-token')
     listBuildTypes.mockReset().mockResolvedValue([MICRO_SAAS])
     createBuildType.mockReset().mockResolvedValue(MICRO_SAAS)
     updateBuildType.mockReset().mockResolvedValue(MICRO_SAAS)
@@ -565,6 +575,29 @@ describe('Idea Scout admin panel', () => {
         expect(screen.getByText(/No agents stored/i)).toBeInTheDocument()
       })
       expect(screen.queryByText(/Could not load the agents/i)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('token freshness (biffo-plugin-ideation#69, biffo-template#1492)', () => {
+    it('wires the API client to re-resolve the token per request, not a mount-time snapshot', async () => {
+      // A `CognitoUserSession` is immutable — `getIdToken()` always hands back
+      // the same JWT captured at mount. `createApi(() => idToken)` froze that
+      // snapshot in React state and never updated it, so once the token lapsed
+      // every call 401'd for the life of the page. The fix passes `getFreshIdToken`
+      // itself — which re-reads the session (and self-heals via the refresh
+      // token) on every call — rather than a closure over frozen state.
+      render(<App />)
+      await screen.findByText('MicroSaaS')
+
+      expect(createApiCalls).toHaveLength(1)
+      const getIdToken = createApiCalls[0]
+
+      // Prove it is genuinely live: change what the auth module resolves and
+      // confirm the function App wired up picks up the new value, rather than
+      // freezing whatever was true at the moment `createApi` was called.
+      getFreshIdToken.mockResolvedValueOnce('refreshed-token')
+      await expect(getIdToken()).resolves.toBe('refreshed-token')
+      expect(getFreshIdToken).toHaveBeenCalled()
     })
   })
 })

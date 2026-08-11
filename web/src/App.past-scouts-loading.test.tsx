@@ -20,6 +20,7 @@ vi.mock("./lib/auth", () => ({
     Promise.resolve({
       getIdToken: () => ({ getJwtToken: () => "test-token" }),
     }),
+  getFreshIdToken: () => Promise.resolve("test-token"),
 }));
 
 vi.mock("./lib/api", async (importOriginal) => {

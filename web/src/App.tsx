@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { CandidateCard } from "./components/CandidateCard";
 import { RunForm } from "./components/RunForm";
@@ -13,7 +13,7 @@ import {
   type Preference,
   type RunState,
 } from "./lib/api";
-import { getCurrentSession } from "./lib/auth";
+import { getCurrentSession, getFreshIdToken } from "./lib/auth";
 import { startedAt } from "./lib/started-at";
 
 /** How often to re-read an in-flight run.
@@ -25,7 +25,6 @@ import { startedAt } from "./lib/started-at";
 const POLL_MS = 5_000;
 
 export default function App() {
-  const [idToken, setIdToken] = useState<string | null>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
 
   const [buildTypes, setBuildTypes] = useState<BuildType[]>([]);
@@ -46,17 +45,21 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const api = useRef(createApi(() => idToken));
-  api.current = createApi(() => idToken);
+  // Created once (lazy initializer — `createApi` runs exactly once, not on
+  // every render): `getFreshIdToken` is a stable module-level function that
+  // re-resolves the session on every call, so the client itself never goes
+  // stale, and nothing here snapshots a token (biffo-plugin-ideation#69).
+  const [api] = useState(() => createApi(getFreshIdToken));
 
-  // The portal owns sign-in; this app only reads the session it established.
+  // Only decides whether to show the sign-in prompt and gate the initial
+  // load below. Requests themselves never read this — `api` re-resolves the
+  // token per call via `getFreshIdToken`, so this snapshot going stale
+  // doesn't matter, including across the life of a polled in-flight run.
   useEffect(() => {
     let cancelled = false;
     void getCurrentSession().then((session) => {
       if (cancelled) return;
-      const token = session?.getIdToken().getJwtToken() ?? null;
-      setIdToken(token);
-      setSignedIn(token != null);
+      setSignedIn(session != null);
     });
     return () => {
       cancelled = true;
@@ -64,11 +67,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (idToken == null) return;
+    if (signedIn !== true) return;
     void Promise.all([
-      api.current.getFormOptions(),
-      api.current.getLastUsedModel(),
-      api.current.listRuns(),
+      api.getFormOptions(),
+      api.getLastUsedModel(),
+      api.listRuns(),
     ])
       .then(([options, lastUsed, existing]) => {
         setBuildTypes(options.build_types);
@@ -92,13 +95,13 @@ export default function App() {
         }
         setError(describe(err));
       });
-  }, [idToken]);
+  }, [signedIn]);
 
   const openRun = useCallback(async (runId: string) => {
     setError(null);
     setCandidates([]);
     try {
-      const response = await api.current.getCandidates(runId);
+      const response = await api.getCandidates(runId);
       setCurrent(response);
       setCandidates(response.candidates);
     } catch (err: unknown) {
@@ -113,13 +116,13 @@ export default function App() {
     if (current == null || !current.in_flight) return;
     const runId = current.run_id;
     const timer = setInterval(() => {
-      void api.current
+      void api
         .getCandidates(runId)
         .then((response) => {
           setCurrent(response);
           setCandidates(response.candidates);
           if (!response.in_flight) {
-            void api.current
+            void api
               .listRuns()
               .then(setRuns)
               .catch(() => undefined);
@@ -140,7 +143,7 @@ export default function App() {
     setStarting(true);
     setError(null);
     try {
-      const run = await api.current.startRun(
+      const run = await api.startRun(
         buildType,
         complexity,
         prefs,
@@ -149,7 +152,7 @@ export default function App() {
       );
       setCurrent(run);
       setCandidates([]);
-      setRuns(await api.current.listRuns());
+      setRuns(await api.listRuns());
     } catch (err: unknown) {
       setError(describe(err));
     } finally {
@@ -159,8 +162,8 @@ export default function App() {
 
   async function deleteRun(runId: string) {
     try {
-      await api.current.deleteRun(runId);
-      setRuns(await api.current.listRuns());
+      await api.deleteRun(runId);
+      setRuns(await api.listRuns());
       if (current?.run_id === runId) {
         setCurrent(null);
         setCandidates([]);
