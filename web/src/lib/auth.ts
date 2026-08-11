@@ -50,7 +50,7 @@ export async function getCurrentSession(): Promise<CognitoUserSession | null> {
       return
     }
     user.getSession((err: Error | null, session: CognitoUserSession | null) => {
-      resolve(err ?? !session?.isValid() ? null : session)
+      resolve((err ?? !session?.isValid()) ? null : session)
     })
   })
 }
@@ -64,9 +64,7 @@ export async function getCurrentSession(): Promise<CognitoUserSession | null> {
  * built from `createApi(() => sessionCapturedAtMount.getIdToken().getJwtToken())`
  * sends a token frozen at mount whose remaining life is whatever was left on the
  * *cached* token — possibly seconds. Once it lapses every call 401s for the life
- * of the page and nothing recovers it but a reload (biffo-plugin-ideation#69).
- * This app polls every 5s (`POLL_MS`) for the life of an in-flight run, so a
- * frozen token is not a hypothetical — a run left open across an expiry stalls.
+ * of the page and nothing recovers it but a reload (#69).
  *
  * Re-resolving instead is cheap and self-healing: `pool.getCurrentUser()` returns
  * a fresh `CognitoUser` with no in-memory session, so `getSession()` re-reads

@@ -1,12 +1,23 @@
-// Runtime core identity (#403/#400), mirroring the sibling skeleton's identity.ts.
+// Runtime core identity — same mechanism as the founder-facing web/'s own
+// identity.ts (ADR-0007). This used to fetch admin_app's own /identity route
+// instead, on the theory that this app (served by the plugin host at
+// /api/v1/plugins/<plugin-slug>/admin/*) is a different origin from the portal
+// and so can't reach /.well-known/biffo-identity.json directly. That theory
+// was wrong: both are served from the same dev.biffo.io origin. The self-served
+// /identity route also turned out to be a dead end even for same-origin
+// callers — the API Gateway's own JWT authorizer and the plugin host's
+// group_gate both sit in front of it, so it can never be reached before a
+// session exists to prove admin-group membership with (confirmed live: a
+// direct fetch 401'd). /.well-known/biffo-identity.json has no such problem:
+// it's public, unauthenticated static content on the portal's own bucket, and
+// was already reachable the whole time.
 //
-// Core publishes its Cognito coordinates at /.well-known/biffo-identity.json,
-// served same-origin from the portal bucket. We resolve it at RUNTIME so this app
-// never bakes the core's pool/client id into its bundle — when core replaces its
-// pool, we always see the current one. Same-origin (baseurl.com/ vs
-// baseurl.com/ideation/) makes a relative fetch valid with no CORS. Memoised: at
-// most one request per page load. Unreachable → null → the caller treats the
-// visitor as signed out (a clean redirect beats trusting a stale local pool id).
+// Core publishes its Cognito coordinates there. We resolve it at RUNTIME so
+// this app never bakes the core's pool/client id into its bundle — when core
+// replaces its pool, we always see the current one. Same-origin makes a
+// relative fetch valid with no CORS. Memoised: at most one request per page
+// load. Unreachable → null → the caller treats the visitor as signed out (a
+// clean redirect beats trusting a stale local pool id).
 
 export interface CoreIdentity {
   userPoolId: string
