@@ -2,43 +2,44 @@
 the network (ADR-0017 §3/§5).
 
 Every call to Core's internal API is **dual-authenticated**: SigV4-signed as this
-plugin's Lambda role (via the SDK's ``SignedCoreClient``, so Core's
+plugin's Lambda role (via the SDK's ``PrincipalCoreClient``, so Core's
 ``require_service_principal`` accepts it) *and* carrying the founder's Cognito
 token in ``X-Biffo-User-Token``, which Core re-verifies to establish identity and
 owner-scope. The plugin's own ingress already verified that token to admit the
 request; forwarding it lets Core be the authority.
 
-Built by subclassing ``SignedCoreClient`` to reuse its signing verbatim, adding
-only: arbitrary methods (owner-data updates are ``PATCH``, which the base client
-lacks), the forwarded-user header, and the 404 -> ``CoreNotFoundError`` mapping
-the adapter's owner-scoped reads rely on.
-
-This is a deliberate copy of the Ideation Engine's ``transport.py`` — the two
-plugins have no shared package, and this file is the narrowest possible piece to
-duplicate rather than inventing a second way to authenticate.
+``PrincipalCoreClient`` (biffo-plugin-sdk >=1.3, biffo-template#1490) folds the
+forwarded-user header in *before* signing by overriding ``_sign`` — the single
+choke point every verb passes through — so there is no call site that can add it
+after signing and get it wrong. This file used to hand-roll that mechanism
+itself (a deliberate copy of the Ideation Engine's own copy, since the two
+plugins had no shared package); both are now consolidated onto the SDK class.
+What remains here is only this adapter's own vocabulary: mapping the SDK's
+``BiffoAPIError`` to this plugin's ``CoreNotFoundError``/``CoreHttpError``
+contract, which callers throughout ``adapter.py`` catch by type.
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any
-from urllib.parse import urlencode
 
-from biffo_plugin_sdk import SignedCoreClient
+from biffo_plugin_sdk import BiffoAPIError, PrincipalCoreClient
 
 from .adapter import CoreHttpError, CoreNotFoundError
 
-#: Mirrors Core's ``middleware/forwarded_user.FORWARDED_USER_HEADER`` — keep in step.
+#: Mirrors Core's ``middleware/forwarded_user.FORWARDED_USER_HEADER`` — kept for
+#: any external reference; the SDK's own constant of the same name is what
+#: ``PrincipalCoreClient`` actually signs with.
 FORWARDED_USER_HEADER = "X-Biffo-User-Token"
 
 
-class CoreTransport(SignedCoreClient):
-    """A SigV4-signed transport that also forwards the founder's token and maps
-    Core's responses to the adapter's contract. Constructed per founder request."""
+class CoreTransport(PrincipalCoreClient):
+    """A SigV4-signed transport that forwards the founder's token (via the SDK's
+    ``PrincipalCoreClient``) and maps Core's responses to the adapter's
+    contract. Constructed per founder request."""
 
     def __init__(self, *, founder_token: str, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-        self._founder_token = founder_token
+        super().__init__(founder_token, **kwargs)
 
     async def request(
         self,
@@ -49,27 +50,10 @@ class CoreTransport(SignedCoreClient):
         params: dict[str, Any] | None = None,
     ) -> Any:
         """The adapter's :class:`~idea_scout.adapter.Transport` seam."""
-        return await self._send(method, path, params=params, json_body=json)
-
-    async def _send(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, Any] | None = None,
-        json_body: dict[str, Any] | None = None,
-    ) -> Any:
-        url = self._url(path)
-        if params:
-            url = f"{url}?{urlencode(params)}"
-        body = json.dumps(json_body).encode() if json_body is not None else None
-        headers = self._sign(method, url, body)
-        # Forwarded after signing: an unsigned header is fine (SigV4 verifies only
-        # the signed set), and Core reads it separately to re-verify the founder.
-        headers[FORWARDED_USER_HEADER] = self._founder_token
-        response = await self._client.request(method, url, headers=headers, content=body)
-        if response.status_code == 404:
-            raise CoreNotFoundError(f"{method} {path} -> 404")
-        if response.status_code >= 400:
-            raise CoreHttpError(f"{method} {path} -> {response.status_code}: {response.text[:500]}")
-        return self._parse_json(response)
+        try:
+            return await self._send(method, path, params=params, json_body=json)
+        except BiffoAPIError as exc:
+            if exc.status_code == 404:
+                raise CoreNotFoundError(f"{method} {path} -> 404") from exc
+            detail = str(exc.body if exc.body is not None else exc.detail)[:500]
+            raise CoreHttpError(f"{method} {path} -> {exc.status_code}: {detail}") from exc
