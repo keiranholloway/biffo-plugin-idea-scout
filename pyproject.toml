@@ -20,7 +20,7 @@ dependencies = [
   # the real release exists. Use a local `[tool.uv.sources]` override until
   # then — see the README's "biffo-plugin-sdk dependency" section, which
   # documents both options and says which to delete once 1.0.0 is live.
-  "biffo-plugin-sdk[sigv4,user-serving]>=1.1,<2.0",
+  "biffo-plugin-sdk[sigv4,user-serving]>=1.3,<2.0",
   "aws-lambda-powertools[tracer]>=3.4.0",
   "httpx>=0.28.1",
 ]
