@@ -1,3 +1,5 @@
+import { createRequest, ApiError } from './api-core'
+
 // Admin API client for Idea Scout's admin panel: build types, agents, and model catalog.
 //
 // Every base is under `/api/v1/plugins/idea-scout`, and that is not incidental:
@@ -28,15 +30,7 @@ const BUSINESS_MODELS_BASE = '/api/v1/plugins/idea-scout'
 const AGENTS_BASE = '/api/v1/plugins/idea-scout/admin'
 const MODEL_CATALOG_BASE = '/api/v1/plugins/idea-scout'
 
-export class ApiError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-  ) {
-    super(message)
-    this.name = 'ApiError'
-  }
-}
+export { ApiError }
 
 export interface BuildType {
   id: string
@@ -79,73 +73,47 @@ export interface ModelCatalogEntry {
   web_capable: boolean | null
 }
 
-async function request<T>(
-  getIdToken: () => string | null | Promise<string | null>,
-  method: string,
-  path: string,
-  body?: unknown,
-  base: string = BUILD_TYPES_BASE,
-): Promise<T> {
-  const idToken = await getIdToken()
-  const res = await fetch(`${base}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-
-  if (!res.ok) {
-    // Read the body for the reason: Core returns a JSON detail for a permission
-    // failure, and "403" alone tells an admin nothing about which rule bit.
-    const detail = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, detail || res.statusText)
-  }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
-}
-
 export function createApi(token: () => string | null | Promise<string | null>) {
+  const request = createRequest(token, BUILD_TYPES_BASE)
   return {
     // Build types
-    list: () => request<BuildType[]>(token, 'GET', '/build-types', undefined, BUILD_TYPES_BASE),
+    list: () => request<BuildType[]>('GET', '/build-types', undefined, BUILD_TYPES_BASE),
     create: (draft: BuildTypeDraft) =>
-      request<BuildType>(token, 'POST', '/build-types', draft, BUILD_TYPES_BASE),
+      request<BuildType>('POST', '/build-types', draft, BUILD_TYPES_BASE),
     update: (id: string, draft: BuildTypeDraft) =>
-      request<BuildType>(token, 'PUT', `/build-types/${id}`, draft, BUILD_TYPES_BASE),
-    remove: (id: string) => request<void>(token, 'DELETE', `/build-types/${id}`, undefined, BUILD_TYPES_BASE),
+      request<BuildType>('PUT', `/build-types/${id}`, draft, BUILD_TYPES_BASE),
+    remove: (id: string) => request<void>('DELETE', `/build-types/${id}`, undefined, BUILD_TYPES_BASE),
 
     // Business models
     listBusinessModels: () =>
-      request<BusinessModel[]>(token, 'GET', '/business-models', undefined, BUSINESS_MODELS_BASE),
+      request<BusinessModel[]>('GET', '/business-models', undefined, BUSINESS_MODELS_BASE),
     createBusinessModel: (draft: BusinessModelDraft) =>
-      request<BusinessModel>(token, 'POST', '/business-models', draft, BUSINESS_MODELS_BASE),
+      request<BusinessModel>('POST', '/business-models', draft, BUSINESS_MODELS_BASE),
     updateBusinessModel: (id: string, draft: BusinessModelDraft) =>
-      request<BusinessModel>(token, 'PUT', `/business-models/${id}`, draft, BUSINESS_MODELS_BASE),
+      request<BusinessModel>('PUT', `/business-models/${id}`, draft, BUSINESS_MODELS_BASE),
     removeBusinessModel: (id: string) =>
-      request<void>(token, 'DELETE', `/business-models/${id}`, undefined, BUSINESS_MODELS_BASE),
+      request<void>('DELETE', `/business-models/${id}`, undefined, BUSINESS_MODELS_BASE),
 
     // Chat agents
-    listChatAgents: () => request<ChatAgent[]>(token, 'GET', '/chat-agents', undefined, AGENTS_BASE),
+    listChatAgents: () => request<ChatAgent[]>('GET', '/chat-agents', undefined, AGENTS_BASE),
     getBuiltinAgents: () =>
-      request<{ agents: ChatAgent[] }>(token, 'GET', '/builtin-agents', undefined, AGENTS_BASE),
+      request<{ agents: ChatAgent[] }>('GET', '/builtin-agents', undefined, AGENTS_BASE),
     createChatAgent: (agent: Omit<ChatAgent, 'agent_key'>) =>
-      request<ChatAgent>(token, 'POST', '/chat-agents', agent, AGENTS_BASE),
+      request<ChatAgent>('POST', '/chat-agents', agent, AGENTS_BASE),
     updateChatAgent: (agentKey: string, updates: Partial<ChatAgent>) =>
-      request<ChatAgent>(token, 'PUT', `/chat-agents/${agentKey}`, updates, AGENTS_BASE),
+      request<ChatAgent>('PUT', `/chat-agents/${agentKey}`, updates, AGENTS_BASE),
     deleteChatAgent: (agentKey: string) =>
-      request<void>(token, 'DELETE', `/chat-agents/${agentKey}`, undefined, AGENTS_BASE),
+      request<void>('DELETE', `/chat-agents/${agentKey}`, undefined, AGENTS_BASE),
 
     // Model catalog
     listModelCatalog: () =>
-      request<ModelCatalogEntry[]>(token, 'GET', '/idea_scout_model_catalog', undefined, MODEL_CATALOG_BASE),
+      request<ModelCatalogEntry[]>('GET', '/idea_scout_model_catalog', undefined, MODEL_CATALOG_BASE),
     createModelCatalogEntry: (entry: Omit<ModelCatalogEntry, 'id'>) =>
-      request<ModelCatalogEntry>(token, 'POST', '/idea_scout_model_catalog', entry, MODEL_CATALOG_BASE),
+      request<ModelCatalogEntry>('POST', '/idea_scout_model_catalog', entry, MODEL_CATALOG_BASE),
     updateModelCatalogEntry: (entryId: string, updates: Partial<ModelCatalogEntry>) =>
-      request<ModelCatalogEntry>(token, 'PUT', `/idea_scout_model_catalog/${entryId}`, updates, MODEL_CATALOG_BASE),
+      request<ModelCatalogEntry>('PUT', `/idea_scout_model_catalog/${entryId}`, updates, MODEL_CATALOG_BASE),
     deleteModelCatalogEntry: (entryId: string) =>
-      request<void>(token, 'DELETE', `/idea_scout_model_catalog/${entryId}`, undefined, MODEL_CATALOG_BASE),
+      request<void>('DELETE', `/idea_scout_model_catalog/${entryId}`, undefined, MODEL_CATALOG_BASE),
   }
 }
 
