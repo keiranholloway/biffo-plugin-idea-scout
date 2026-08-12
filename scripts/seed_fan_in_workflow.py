@@ -48,7 +48,25 @@ from idea_scout.definitions import (  # noqa: E402
 
 WORKFLOW_NAME = "Idea Scout — synthesise once research completes"
 
-_DEFINITIONS_PATH = "/api/v1/admin/orchestration/workflows"
+#: Core mounts the orchestration router at `/api/v1/orchestration`, NOT under
+#: `/api/v1/admin`. This carried a stray `admin/` segment until 2026-08-12,
+#: which meant the script 404'd on every run in every environment and had
+#: therefore never once seeded a definition — so any scout run that finished
+#: did so on something other than this workflow.
+#:
+#: Verified in Core's source rather than guessed: the workflow-CRUD router
+#: declares `prefix="/orchestration/workflows"`
+#: (tabsii-platform `services/api/src/api/routers/orchestration.py:83`) and is
+#: mounted with `prefix="/api/v1"` (`services/api/src/api/main.py:117`). The
+#: `/api/v1/admin/orchestration` router is a different one that exposes only
+#: `/test` (`services/api/src/api/routers/admin/orchestration.py:39,44`), so
+#: the `admin/` variant 404s exactly like a route that never existed.
+#:
+#: The sibling plugin `biffo-plugin-marketing` hit and fixed this identical
+#: line first (its #61), and measured it against deployed dev on 2026-08-11:
+#: `/api/v1/orchestration/workflows` -> 200 with a valid admin token, the
+#: `admin/` variant -> 404.
+_DEFINITIONS_PATH = "/api/v1/orchestration/workflows"
 
 
 def definition() -> dict:
