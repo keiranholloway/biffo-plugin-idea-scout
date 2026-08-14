@@ -228,10 +228,16 @@ jobs:
   # not pass.
   #
   # The JS audit needs the pnpm/Node toolchain this job never carried before
-  # (it only ever ran the Python audit) — mirrored from the frontend/
-  # admin-frontend jobs below rather than pnpm/action-setup alone, since this
-  # job's runner is the shared self-hosted fleet and cannot be assumed to
-  # have a Node runtime preinstalled the way GitHub's hosted image does.
+  # (it only ever ran the Python audit) — pnpm/action-setup PLUS
+  # actions/setup-node, mirrored from the frontend/admin-frontend jobs below,
+  # rather than pnpm/action-setup alone (which sufficed for
+  # biffo-plugin-ideation#139's equivalent job, confirmed by its green CI
+  # run — but that repo, like this one, currently has RUNNER_LABEL set to
+  # ubuntu-latest, whose hosted image preinstalls Node; `runs-on` here falls
+  # back to it but is not guaranteed to stay it). Matching this file's own
+  # existing pattern rather than relying on an environment property this job
+  # doesn't control keeps the job correct if RUNNER_LABEL later points at the
+  # self-hosted fleet, whose images this repo does not control either.
   # `pnpm audit` reads the committed lockfile directly — no `pnpm install`
   # needed, confirmed locally with node_modules absent.
   security-deps:
