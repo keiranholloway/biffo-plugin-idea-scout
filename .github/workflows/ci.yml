@@ -201,6 +201,39 @@ jobs:
       - name: gitleaks filesystem scan
         run: gitleaks detect --no-git --redact -v --exit-code=2
 
+  # Covers BOTH languages in one job/check: Python (root uv.lock) and JS
+  # (web/, web-admin/). Until this changed, only the Python half ran — the
+  # JS half of scripts/ (js-dependency-audit.sh) was present and never
+  # invoked, so this repo's two frontend trees were never scanned by its own
+  # CI. That is the split biffo-template's AGENTS.md §9 documents: shared-sync
+  # delivers the SCRIPT into a repo, it cannot wire it into CI. It already
+  # cost something real: a js-yaml/nanoid advisory pair sat in web/ and
+  # web-admin/'s lockfiles and was caught only from DOWNSTREAM, when
+  # biffo-platform's audit (which discovers lockfiles by walking, not a fixed
+  # path list) scanned a vendored copy of this repo (fixed here in #122).
+  #
+  # One job, one check name ("Dependency Audit") — not a second job, so this
+  # repo's PR check list doesn't diverge further from the estate's other
+  # plugin repos (biffo-template epic #1521). Matches biffo-plugin-ideation's
+  # PR #139, which wires both audits into the same job under the same name.
+  #
+  # Both scripts discover every lockfile tree by walking from the git root
+  # (#1270), so a single invocation of each from the repo root covers every
+  # tree with no per-tree wiring — verified locally before this job changed.
+  #
+  # Neither step gets `continue-on-error` or `|| true`. Both scripts already
+  # distinguish "found a real advisory" (exit 1) from "could not determine"
+  # (exit 2 — e.g. an unparseable registry response or a missing tool), per
+  # each script's own header comment — an audit that cannot run must BLOCK,
+  # not pass.
+  #
+  # The JS audit needs the pnpm/Node toolchain this job never carried before
+  # (it only ever ran the Python audit) — mirrored from the frontend/
+  # admin-frontend jobs below rather than pnpm/action-setup alone, since this
+  # job's runner is the shared self-hosted fleet and cannot be assumed to
+  # have a Node runtime preinstalled the way GitHub's hosted image does.
+  # `pnpm audit` reads the committed lockfile directly — no `pnpm install`
+  # needed, confirmed locally with node_modules absent.
   security-deps:
     name: Dependency Audit
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
@@ -211,7 +244,25 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-groups
-      - run: sh scripts/py-dependency-audit.sh
+      - name: Python dependency audit
+        run: sh scripts/py-dependency-audit.sh
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      # This job runs from the repo root, not a single frontend's
+      # working-directory, and audits BOTH web/ and web-admin/ — so
+      # `cache-dependency-path` names both lockfiles explicitly rather than
+      # relying on setup-node's default glob, which is scoped to the job's
+      # working directory and would miss one or both trees.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            web-admin/pnpm-lock.yaml
+      - name: JS dependency audit
+        run: sh scripts/js-dependency-audit.sh
 
   frontend:
     name: Frontend (lint, types, test, build)
