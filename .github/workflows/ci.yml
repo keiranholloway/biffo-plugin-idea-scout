@@ -255,18 +255,17 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 9
-      # This job runs from the repo root, not a single frontend's
-      # working-directory, and audits BOTH web/ and web-admin/ — so
-      # `cache-dependency-path` names both lockfiles explicitly rather than
-      # relying on setup-node's default glob, which is scoped to the job's
-      # working directory and would miss one or both trees.
+      # No `cache: pnpm` here, unlike the frontend/admin-frontend jobs below.
+      # Those jobs run `pnpm install`, which populates a store worth caching.
+      # This job never does — `pnpm audit` reads the committed lockfile and
+      # queries the registry directly, so no store is ever populated, and
+      # asking actions/setup-node to save an empty one fails the job at the
+      # post-step with "Path Validation Error: Path(s) specified in the
+      # action for caching do(es) not exist" — a real defect caught by
+      # PR #123's own first CI run, not a hypothetical.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: |
-            web/pnpm-lock.yaml
-            web-admin/pnpm-lock.yaml
       - name: JS dependency audit
         run: sh scripts/js-dependency-audit.sh
 
