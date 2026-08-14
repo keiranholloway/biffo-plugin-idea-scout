@@ -292,11 +292,16 @@ def test_a_failed_startup_seed_logs_cores_actual_response(monkeypatch):
     # Capture from the module's OWN logger rather than through `caplog`, which
     # depends on propagation reaching the root handler. That holds here and does
     # not hold once this file is vendored into `biffo-platform`, whose suite also
-    # imports Core: AWS Lambda Powertools' `Logger()` reconfigures logging and
-    # disables propagation, so the assertion would fail for a reason that has
-    # nothing to do with what it tests — green here, red downstream, identical
-    # code. (biffo-plugin-ideation learned this the hard way; see its
-    # tests/test_startup_seeding.py.)
+    # runs Alembic: Core's `env.py` calls `logging.config.fileConfig()`, which
+    # defaults to `disable_existing_loggers=True` and disables every logger
+    # created before it ran — not AWS Lambda Powertools' `Logger()`, which was
+    # measured and leaves other loggers' propagation untouched. So the
+    # assertion would fail for a reason that has nothing to do with what it
+    # tests — green here, red downstream, identical code. Being fixed at the
+    # cause upstream in biffo-template's `services/api/migrations/env.py`
+    # (`disable_existing_loggers=False`); this capture-from-the-module's-own-
+    # logger approach needs no change either way. (biffo-plugin-ideation
+    # learned this the hard way; see its tests/test_startup_seeding.py.)
     records: list[logging.LogRecord] = []
 
     class _Capture(logging.Handler):
