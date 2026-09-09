@@ -128,6 +128,47 @@ class ScoutRun:
 
 
 @dataclass(frozen=True)
+class CadencePreference:
+    """One founder's stored auto-scout preference (#50) — the *inputs* only.
+
+    Deliberately holds no ``next_due_at`` and no ``last_run_at``. Both are
+    functions of this preference and ``idea_scout_runs.created_at``, so storing
+    either would create a second place for the same fact to live and a way for
+    the two to disagree. :class:`CadenceState` computes them on read instead.
+
+    ``id`` is ``None`` for the built-in default handed to a founder who has
+    never saved anything — there is no row behind it yet, which is precisely
+    what tells the service to POST rather than PATCH.
+    """
+
+    enabled: bool
+    cadence_days: int
+    id: str | None = None
+
+
+@dataclass(frozen=True)
+class CadenceState:
+    """The preference plus everything derived from it, as the surface needs it.
+
+    ``is_due`` is the whole point: it is the single authority on whether a
+    returning founder gets a scout started for them. The frontend does not
+    recompute it — it used to, against a hardcoded constant, and a second copy
+    of that rule is exactly what this change removes.
+    """
+
+    enabled: bool
+    cadence_days: int
+    #: When the next automatic scout becomes due, ISO-8601. ``None`` when the
+    #: founder has no runs to measure from, when cadence is off, or when the
+    #: most recent run's timestamp could not be parsed.
+    next_due_at: str | None
+    #: Whether returning right now should start a scout. Always ``False`` when
+    #: ``enabled`` is ``False`` — an explicit OFF suppresses the auto-start, it
+    #: does not merely hide the control.
+    is_due: bool
+
+
+@dataclass(frozen=True)
 class Candidate:
     """A stored candidate idea, as read back for the founder."""
 

@@ -246,6 +246,61 @@
       }
     },
     {
+      "name": "idea_scout_cadence",
+      "columns": [
+        {
+          "name": "owner_sub",
+          "type": "String(64)",
+          "nullable": false,
+          "description": "Cognito sub of the founder this cadence preference belongs to — the owner-scope column, exactly as idea_scout_runs uses it (ADR-0017 §5). One row per founder; the service upserts on that basis because Core's owner-data routes have no upsert of their own. Reads and writes go through Core's owner-scoped service routes, never generic CRUD (which is tenant-scoped and would let one founder read another's cadence)."
+        },
+        {
+          "name": "enabled",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Whether the pull-based auto-scout is on for this founder (#50). False is an explicit OFF, not an absence: it suppresses the auto-start outright while leaving cadence_days remembered, so turning it back on does not lose the interval they chose. A founder with NO row at all is a different case again — they get the built-in default (on, DEFAULT_CADENCE_DAYS), so nothing changes for anyone who has never touched the control. Nullable because the generated migration DDL does not apply declared defaults (only the in-process model) — the service sets it explicitly on every write, and treats NULL as false on read."
+        },
+        {
+          "name": "cadence_days",
+          "type": "Integer",
+          "nullable": true,
+          "description": "How many days old this founder's most recent scout has to be before returning to the surface starts a fresh one. Bounded by MIN_CADENCE_DAYS/MAX_CADENCE_DAYS in definitions.py and validated server-side, because it arrives from a client. Deliberately the ONLY interval stored: there is no next_run_at or last_run_at column, because both are derivable from this plus idea_scout_runs.created_at, and a stored copy would be a second place for the truth to live. Nullable for the same declared-default reason as enabled — the service falls back to DEFAULT_CADENCE_DAYS on NULL."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_idea_scout_cadence_owner",
+          "columns": [
+            "tenant_id",
+            "owner_sub"
+          ]
+        }
+      ],
+      "permissions": {
+        "list": {
+          "allowed": false
+        },
+        "read": {
+          "allowed": false
+        },
+        "create": {
+          "allowed": false
+        },
+        "update": {
+          "allowed": false
+        },
+        "delete": {
+          "allowed": false
+        }
+      },
+      "owner_scoped_service": {
+        "owner_column": "owner_sub",
+        "allowed_principals": [
+          "system:idea-scout"
+        ]
+      }
+    },
+    {
       "name": "idea_scout_build_types",
       "columns": [
         {

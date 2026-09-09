@@ -33,7 +33,9 @@ from .adapter import CoreHttpError, CoreHttpGateway
 from .definitions import (
     DEFAULT_RESEARCH_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
+    MAX_CADENCE_DAYS,
     MAX_COMPLEXITY,
+    MIN_CADENCE_DAYS,
     MIN_COMPLEXITY,
     PREFERENCES,
     complexity_label,
@@ -44,6 +46,7 @@ from .service import (
     AgentConfigMissingError,
     IdeaScoutError,
     IdeaScoutService,
+    InvalidCadenceError,
     InvalidComplexityError,
     MalformedCandidatesError,
     RunNotFoundError,
@@ -127,6 +130,7 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     UnknownBuildTypeError: 422,
     UnknownBusinessModelError: 422,
     InvalidComplexityError: 422,
+    InvalidCadenceError: 422,
     UnknownPreferenceError: 422,
     UnknownModelError: 422,
     MalformedCandidatesError: 502,
@@ -165,6 +169,41 @@ class StartRunRequest(BaseModel):
     # they never made. Validated against the active list in the service, next to
     # the build type, so both rejections read the same way.
     business_model: str | None = Field(default=None, max_length=64)
+
+
+class CadenceRequest(BaseModel):
+    """What the cadence control submits (#50).
+
+    Both fields are required and always sent together. ``enabled`` false is an
+    explicit OFF — a real answer the founder gave, not an omission — and
+    ``cadence_days`` is still carried with it so switching back on restores the
+    interval they chose rather than silently resetting to the default.
+
+    The range is enforced here *and* in the service. Here it is a 422 the client
+    can act on; there it is the rule itself, which a second caller must not be
+    able to route around. Same arrangement as ``complexity`` above.
+    """
+
+    enabled: bool
+    cadence_days: int = Field(ge=MIN_CADENCE_DAYS, le=MAX_CADENCE_DAYS)
+
+
+def _cadence_json(state: Any) -> dict[str, Any]:
+    """The cadence as the surface needs it — the preference, the bounds it must
+    stay inside, and the two derived facts.
+
+    ``next_due_at`` and ``is_due`` are computed on every read from the stored
+    interval and the founder's latest run (see ``service._derive_cadence_state``).
+    Neither is stored, so neither can disagree with the preference beside it.
+    """
+    return {
+        "enabled": state.enabled,
+        "cadence_days": state.cadence_days,
+        "min_cadence_days": MIN_CADENCE_DAYS,
+        "max_cadence_days": MAX_CADENCE_DAYS,
+        "next_due_at": state.next_due_at,
+        "is_due": state.is_due,
+    }
 
 
 def _run_state(run: Any) -> dict[str, Any]:
@@ -322,16 +361,27 @@ async def form_options(
 
     Each list is shaped by the same helper its individual endpoint uses, so the
     two can never drift — asserted in test_idea_scout_app.py.
+
+    **The cadence rides along for the same concurrency reason**, even though it
+    is not strictly a run-form input (#50). The page needs it on mount — it is
+    what decides whether a returning founder gets a scout started for them —
+    and asking for it separately would have made this a four-request mount, or
+    eight Lambda invocations against a ceiling of ten. ``GET /cadence`` still
+    exists and is still what the surface re-reads after a run starts; this is
+    the bootstrap, not a replacement for it. Same helper again, so the two
+    cannot drift.
     """
     build_types = await svc.list_build_types()
     business_models = await svc.list_business_models()
     models = await svc.list_model_catalog()
+    cadence = await svc.cadence_state(owner_sub=founder.sub)
     return {
         "build_types": [_build_type_json(t) for t in build_types],
         "business_models": [_business_model_json(m) for m in business_models],
         "models": [_model_option_json(m) for m in models],
         "preferences": _preferences_json(),
         "complexity_levels": _complexity_levels_json(),
+        "cadence": _cadence_json(cadence),
     }
 
 
@@ -396,6 +446,50 @@ async def read_candidates(
         **_run_state(run),
         "candidates": [_candidate_json(c) for c in candidates],
     }
+
+
+@app.get("/cadence")
+async def read_cadence(
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """This founder's auto-scout cadence, and whether a scout is due right now.
+
+    The surface reads ``is_due`` and acts on it; it does **not** recompute
+    staleness from ``created_at`` against a constant of its own. It used to, and
+    that constant was the same value in two languages — the interval being
+    founder-configurable is precisely what makes a second copy untenable.
+
+    The bounds ride along for the same reason ``/complexity-levels`` serves its
+    labels: the number input's ``min``/``max`` must be the range the API will
+    actually accept, and two copies would drift with the frontend's the one
+    that is wrong.
+    """
+    return _cadence_json(await svc.cadence_state(owner_sub=founder.sub))
+
+
+@app.put("/cadence")
+async def write_cadence(
+    body: CadenceRequest,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """Set the interval, or turn the auto-scout off.
+
+    Returns the same shape the GET does, recomputed — so the caller sees the
+    new ``next_due_at`` and ``is_due`` that follow from what it just saved,
+    without a second round trip and without deriving either for itself.
+
+    ``PUT`` rather than ``POST``: there is exactly one cadence per founder and
+    this replaces it, so repeating the call is a no-op rather than a second row.
+    Whether it inserts or patches underneath is the service's business.
+    """
+    await svc.set_cadence(
+        owner_sub=founder.sub,
+        enabled=body.enabled,
+        cadence_days=body.cadence_days,
+    )
+    return _cadence_json(await svc.cadence_state(owner_sub=founder.sub))
 
 
 @app.post("/runs/{run_id}/delete", status_code=204)

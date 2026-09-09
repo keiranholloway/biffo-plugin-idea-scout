@@ -28,6 +28,7 @@ from idea_scout.models import (
     AgentRunView,
     BuildType,
     BusinessModel,
+    CadencePreference,
     Candidate,
     ModelCatalogEntry,
     ScoutRun,
@@ -198,6 +199,11 @@ class FakeCoreGateway:
         self._reads_in_flight = 0
         self.max_concurrent_reads = 0
         self.runs: dict[str, ScoutRun] = {}
+        #: Cadence rows keyed by their own id, each carrying its owner — stored
+        #: as (owner_sub, CadencePreference) so the owner check below is the
+        #: same shape Core's owner-data scoping performs, rather than a lookup
+        #: that could not possibly leak.
+        self.cadence: dict[str, tuple[str, CadencePreference]] = {}
         self.candidates: list[Candidate] = []
         self.agent_runs: dict[str, FakeAgentRun] = {}
         #: Definitions passed to request_agent_run, in order — so a test can
@@ -311,6 +317,39 @@ class FakeCoreGateway:
         from dataclasses import replace
 
         self.runs[run_id] = replace(self.runs[run_id], **fields)
+
+    # ── Cadence preference (#50) ─────────────────────────────────────────────
+
+    async def get_cadence(self, *, owner_sub: str) -> CadencePreference | None:
+        for row_owner, preference in self.cadence.values():
+            if row_owner == owner_sub:
+                return preference
+        return None
+
+    async def create_cadence(
+        self, *, owner_sub: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        preference = CadencePreference(
+            id=self._id("cadence"), enabled=enabled, cadence_days=cadence_days
+        )
+        assert preference.id is not None
+        self.cadence[preference.id] = (owner_sub, preference)
+        return preference
+
+    async def update_cadence(
+        self, *, cadence_id: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        """Rejects an id that is not a known row, the way Core's 404 would.
+
+        Deliberately NOT a silent create-if-missing: this fake is the only thing
+        standing in for Core's scoping in these tests, so a write addressed at a
+        row that does not exist must fail here too, rather than inventing one
+        and letting a broken upsert look correct.
+        """
+        owner_sub, _ = self.cadence[cadence_id]
+        preference = CadencePreference(id=cadence_id, enabled=enabled, cadence_days=cadence_days)
+        self.cadence[cadence_id] = (owner_sub, preference)
+        return preference
 
     # ── Agent runs ───────────────────────────────────────────────────────────
 

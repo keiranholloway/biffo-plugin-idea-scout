@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { CadenceControl } from "./components/CadenceControl";
 import { CandidateCard } from "./components/CandidateCard";
 import { RunForm } from "./components/RunForm";
-import { ageInDays, isStale } from "./lib/cadence";
+import { ageInDays } from "./lib/cadence";
 import {
   ApiError,
   createApi,
   type BuildType,
   type BusinessModel,
+  type Cadence,
   type Candidate,
   type ComplexityLevel,
   type ModelOption,
@@ -45,6 +47,11 @@ export default function App() {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunState[]>([]);
+  // The founder's own cadence preference plus the server's derived `is_due`.
+  // `null` until the first load answers — the control is not rendered before
+  // then, because "off" and "not loaded yet" must not look the same.
+  const [cadence, setCadence] = useState<Cadence | null>(null);
+  const [savingCadence, setSavingCadence] = useState(false);
   const [current, setCurrent] = useState<RunState | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [starting, setStarting] = useState(false);
@@ -91,12 +98,19 @@ export default function App() {
 
   useEffect(() => {
     if (signedIn !== true) return;
-    void Promise.all([
-      api.getFormOptions(),
-      api.getLastUsedModel(),
-      api.listRuns(),
-    ])
+    // THREE requests, and the count is load-bearing rather than incidental:
+    // every `/api/v1/plugins/idea-scout/*` request is served by the shared
+    // plugin host, which then calls Core, so each costs TWO Lambda
+    // invocations. Five separate calls once asked for ~10 against an account
+    // ceiling of 10 and throttled the page into a 503 (#79), and
+    // `App.request-fanout.test.tsx` guards the number.
+    //
+    // The cadence is therefore bootstrapped inside `/form-options` rather than
+    // fetched as a fourth call. Anything else this page comes to need on mount
+    // belongs there too.
+    void Promise.all([api.getFormOptions(), api.getLastUsedModel(), api.listRuns()])
       .then(([options, lastUsed, existing]) => {
+        const currentCadence = options.cadence;
         setBuildTypes(options.build_types);
         setBusinessModels(options.business_models);
         setComplexityLevels(options.complexity_levels);
@@ -104,27 +118,35 @@ export default function App() {
         setModels(options.models);
         setSelectedModel(lastUsed);
         setRuns(existing);
+        setCadence(currentCadence);
         setLoaded(true);
 
-        // Pull-based cadence (#50): `existing` is most-recent-first (see
-        // service.list_runs), so existing[0] is the one to judge staleness
-        // against. Skipped entirely when there is no history — a founder who
-        // has never run a scout is not "returning to a stale one", they are
-        // new, and there is nothing to replay anyway.
+        // Pull-based cadence (#50). The staleness DECISION is
+        // `currentCadence.is_due`, computed server-side from this founder's
+        // own stored interval and their most recent run. It is deliberately
+        // not recomputed here: the interval is per-founder now, so a local
+        // comparison would be measuring against a number they may never have
+        // chosen — and an explicit OFF makes `is_due` false at the source,
+        // which is what stops the run rather than merely hiding the control.
         //
-        // `!mostRecent.in_flight` is the idempotency guard, and it is read
-        // fresh from the server on every mount rather than from anything
-        // shared client-side: once this (or any) trigger has started a run,
-        // that run IS the most recent one and it is in flight, so a refresh,
-        // a second tab, or a back-navigation moments later reads that same
-        // fact and does not fire again. `autoStartAttempted` only covers a
-        // second effect firing within *this* mount.
+        // `existing` is most-recent-first (see service.list_runs), so
+        // existing[0] is the run whose settings get replayed.
+        //
+        // `!mostRecent.in_flight` stays as a client-side idempotency guard
+        // even though the server applies the same rule to `is_due`. It is not
+        // a second copy of the staleness rule — it is this client checking the
+        // list it actually holds, read fresh from the server on every mount:
+        // once any trigger has started a run, that run IS the most recent one
+        // and it is in flight, so a refresh, a second tab, or a
+        // back-navigation moments later reads that fact and does not fire
+        // again. `autoStartAttempted` only covers a second effect firing
+        // within *this* mount.
         const mostRecent = existing[0];
         if (
+          currentCadence.is_due &&
           mostRecent != null &&
           !mostRecent.in_flight &&
-          !autoStartAttempted.current &&
-          isStale(mostRecent.created_at)
+          !autoStartAttempted.current
         ) {
           autoStartAttempted.current = true;
           void startRun(
@@ -208,6 +230,12 @@ export default function App() {
       setCurrent(run);
       setCandidates([]);
       setRuns(await api.listRuns());
+      // Starting a run moves the founder's most recent `created_at`, and the
+      // due date is derived from it — so the control would otherwise keep
+      // saying "due now" immediately after a scout it just started. Re-read
+      // rather than recompute: the server owns that derivation, and this is
+      // the one place a local guess would be cheap and wrong.
+      setCadence(await api.getCadence());
       setAutoStarted(
         autoTrigger != null ? { runId: run.run_id, ageDays: autoTrigger.ageDays } : null,
       );
@@ -216,6 +244,21 @@ export default function App() {
       if (autoTrigger != null) setAutoStarted(null);
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function saveCadence(enabled: boolean, cadenceDays: number) {
+    setSavingCadence(true);
+    setError(null);
+    try {
+      // The response is the recomputed cadence, so `next_due_at` and `is_due`
+      // reflect what was just saved without a second request — and without
+      // this client deriving either for itself.
+      setCadence(await api.setCadence(enabled, cadenceDays));
+    } catch (err: unknown) {
+      setError(describe(err));
+    } finally {
+      setSavingCadence(false);
     }
   }
 
@@ -295,6 +338,17 @@ export default function App() {
             );
           })}
         </ul>
+
+        {/* Rendered only once the first load has answered: before that, an
+            "off" control and an unloaded one are indistinguishable, which is
+            the same mistake the sidebar's empty-list copy made (#53). */}
+        {cadence != null && (
+          <CadenceControl
+            cadence={cadence}
+            busy={savingCadence}
+            onSave={(enabled, days) => void saveCadence(enabled, days)}
+          />
+        )}
       </aside>
 
       <main className="main">

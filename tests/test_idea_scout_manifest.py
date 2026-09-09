@@ -31,7 +31,7 @@ _ROOT = MANIFEST_PATH.parent
 #   agent-run-request     -> requesting the research and synthesis runs
 #   agent-run-read        -> polling those runs for their terminal state
 #   run-output-tool       -> the findings/candidates structured-output tools
-#   owner-scoped-tables   -> /internal/owner-data/idea_scout_{runs,candidates}
+#   owner-scoped-tables   -> /internal/owner-data/idea_scout_{runs,candidates,cadence}
 #   chat-agent-registry   -> the admin-editable prompt/model per agent role
 #   user-profile-read     -> /internal/user-profile/mine (biffo-platform #74)
 EXPECTED_CAPABILITIES = {
@@ -43,7 +43,7 @@ EXPECTED_CAPABILITIES = {
     "user-profile-read",
 }
 
-OWNER_SCOPED_TABLES = {"idea_scout_runs", "idea_scout_candidates"}
+OWNER_SCOPED_TABLES = {"idea_scout_runs", "idea_scout_candidates", "idea_scout_cadence"}
 ADMIN_MANAGED_TABLES = {
     "idea_scout_build_types",
     "idea_scout_business_models",
@@ -93,6 +93,43 @@ def test_runs_carry_an_optional_business_model():
     column = next(c for c in runs["columns"] if c["name"] == "business_model")
     assert column["type"] == "String(64)"
     assert column["nullable"] is True
+
+
+def test_cadence_stores_the_preference_and_nothing_derivable_from_it():
+    """The cadence table holds the founder's *inputs* and only those.
+
+    Storing `next_run_at`, `next_due_at` or `last_run_at` would put a fact in
+    two places — the column and `idea_scout_runs.created_at` plus the interval
+    — and the two would disagree the moment a founder changed the interval or
+    deleted their most recent run. `service._derive_cadence_state` computes
+    them on read instead, and this guard is what keeps the shortcut from being
+    added back later "just for the query".
+    """
+    table = next(t for t in _raw()["tables"] if t["name"] == "idea_scout_cadence")
+    assert {c["name"] for c in table["columns"]} == {
+        "owner_sub",
+        "enabled",
+        "cadence_days",
+    }
+
+
+def test_cadence_scopes_by_owner_the_same_way_runs_do():
+    """A cadence preference is as owner-private as a run is.
+
+    Asserted against `idea_scout_runs` rather than against literals, so the two
+    cannot drift: if the runs table's owner column or principal list ever
+    changes, this fails rather than silently leaving cadence behind on the old
+    contract.
+    """
+    tables = {t["name"]: t for t in _raw()["tables"]}
+    runs, cadence = tables["idea_scout_runs"], tables["idea_scout_cadence"]
+
+    assert cadence["owner_scoped_service"] == runs["owner_scoped_service"]
+    assert cadence["permissions"] == runs["permissions"]
+    owner = next(c for c in cadence["columns"] if c["name"] == "owner_sub")
+    assert owner["type"] == "String(64)"
+    assert owner["nullable"] is False
+    assert cadence["indexes"][0]["columns"] == ["tenant_id", "owner_sub"]
 
 
 def test_no_example_scaffolding_survives():
@@ -179,6 +216,8 @@ def test_columns_with_no_db_default_are_nullable():
         ("idea_scout_runs", "status"),
         ("idea_scout_runs", "deleted"),
         ("idea_scout_build_types", "active"),
+        ("idea_scout_cadence", "enabled"),
+        ("idea_scout_cadence", "cadence_days"),
     }
     for table in _raw()["tables"]:
         for column in table["columns"]:
