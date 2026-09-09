@@ -2,14 +2,16 @@ name: CI
 
 # Scaled down from biffo-template's own root .github/workflows/ci.yml.
 #
-# It HAS Terraform, contrary to the sentence that used to stand here ("a plugin
-# repo has no Terraform of its own — Terraform, if a plugin ships any, is
-# provisioned by the consuming project's infra, not this repo's CI"). That
-# claim was inherited verbatim from the skeleton, it was untrue of this repo
-# from the day `terraform/` landed, and it is exactly why nothing checked those
-# three .tf files for months (#101, class fix keiranholloway/biffo-template#1244).
-# What the consuming project provisions is the module's *instantiation*; the
-# source lives here and is edited here. See the `terraform` job below.
+# It no longer has a `terraform` job. `terraform/` provisioned only this
+# plugin's per-plugin S3/CloudFront frontend origin (comment history: #101,
+# class fix keiranholloway/biffo-template#1244), and that origin is removed
+# as part of migrating the frontend onto the shared plugin host's StaticFiles
+# mount instead (ADR-0021, biffo-template#1915/#1939, this repo's #130).
+# Idea Scout never had a backend of its own to provision either — its ASGI
+# apps are mounted by the shared host — so once the frontend bucket is gone
+# this repo has no Terraform left to check. If this plugin ever grows real
+# infrastructure again, re-add a `terraform/` directory and this job together
+# (see git history pre-#130 for the shape).
 #
 # It CAN have JS/TS, contrary to the skeleton's original assumption: a
 # user-facing plugin (ADR-0017/ADR-0021) ships its own frontend under web/, and
@@ -116,43 +118,6 @@ jobs:
         continue-on-error: true
         run: |
           uv run python -m jsonschema -i biffo.plugin.json registry-schema.json
-
-  terraform:
-    name: Terraform (fmt & validate)
-    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
-    timeout-minutes: 20
-    # Until this job existed, this repo's Terraform was checked by nothing: three
-    # .tf files on dev and zero terraform references across all three workflows,
-    # so a malformed or unparseable .tf merged green (#101).
-    #
-    # `scripts/verify.sh` did not save you either, and correctly did not try —
-    # its terraform check is guarded by `ci_has "terraform fmt"`, so a
-    # template-shipped gate never asserts over more than the repo's own CI does
-    # (biffo-template#325). A repo whose CI checked nothing therefore got nothing
-    # locally. This job is what switches the local gate on as well.
-    #
-    # `-backend=false`: this job has no AWS credentials, and `validate` is
-    # syntax/schema checking that needs no real state — the same shape both
-    # runner fleets and biffo-template's own infra jobs use.
-    #
-    # Note this repo CAN run `validate`, and the plugin skeleton upstream
-    # cannot: the skeleton's module wraps `../../cloud/aws/compute`, a path
-    # relative to its install location, so `terraform init` there fails before
-    # validate is reached. This module is self-contained (S3 + IAM for the
-    # plugin's frontend bucket), so it initialises and validates in place —
-    # verified locally before this job was added.
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: '~> 1.9'
-      - name: Terraform fmt check
-        run: terraform fmt -check -recursive terraform/
-      - name: Terraform validate
-        working-directory: terraform
-        run: |
-          terraform init -input=false -backend=false
-          terraform validate
 
   security-secrets:
     name: Secret Scan
