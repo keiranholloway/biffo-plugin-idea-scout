@@ -181,6 +181,75 @@ body {
   color: var(--state-negative);
 }
 
+/* The automatic-scouting control (#50).
+   Lives in the sidebar rather than the run form: it is a standing preference
+   about every future scout, not an input to the one being started, and it has
+   to be reachable while a run is open. Separated from the run list above by a
+   rule so it does not read as another past scout. */
+.cadence {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.cadence h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cadence-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.cadence-interval {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.cadence-interval input[type="number"] {
+  width: 4.5rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+/* Says why Save is refusing, rather than leaving a disabled button with no
+   explanation — the bounds come from the server, so the founder has no other
+   way to know what the allowed range is. */
+.cadence-invalid {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--state-negative);
+}
+
+.cadence-status {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.cadence-save {
+  align-self: flex-start;
+  font-size: 0.8rem;
+  padding: 0.4rem 0.85rem;
+}
+
 .main {
   flex: 1;
   min-width: 0;

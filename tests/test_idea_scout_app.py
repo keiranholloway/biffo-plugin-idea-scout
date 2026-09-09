@@ -514,6 +514,8 @@ def test_last_used_model_does_not_leak_between_founders(client, core):
         ("GET", "/runs/r1"),
         ("GET", "/runs/r1/candidates"),
         ("POST", "/runs/r1/delete"),
+        ("GET", "/cadence"),
+        ("PUT", "/cadence"),
     ],
 )
 def test_every_route_is_gated(method, path):
@@ -552,6 +554,7 @@ def test_form_options_matches_the_individual_endpoints_exactly(client: TestClien
     assert combined["models"] == client.get("/models").json()
     assert combined["preferences"] == client.get("/preferences").json()
     assert combined["complexity_levels"] == client.get("/complexity-levels").json()
+    assert combined["cadence"] == client.get("/cadence").json()
 
 
 def test_form_options_carries_every_key_the_form_needs(client: TestClient):
@@ -562,12 +565,14 @@ def test_form_options_carries_every_key_the_form_needs(client: TestClient):
         "models",
         "preferences",
         "complexity_levels",
+        "cadence",
     }
     # Non-empty for the ones the fixture seeds, so an accidentally-empty payload
     # cannot pass as "well-formed".
     assert body["build_types"]
     assert body["preferences"]
     assert body["complexity_levels"]
+    assert body["cadence"]
 
 
 def test_form_options_requires_a_founder(client: TestClient):

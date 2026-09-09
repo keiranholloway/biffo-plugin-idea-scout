@@ -7,10 +7,11 @@ or AWS itself — so the whole mapping is testable with a fake transport.
 
 Seam mapping:
 
-- run/candidate rows -> ``/api/v1/internal/owner-data/<table>`` (ADR-0017 §5).
-  The owner is stamped by Core from the forwarded token, so ``owner_sub`` is
-  **never** sent in a body or param; the adapter relies on Core's owner-scoping
-  and ignores the ``owner_sub`` the port passes (fakes use it instead).
+- run/candidate/cadence rows -> ``/api/v1/internal/owner-data/<table>``
+  (ADR-0017 §5). The owner is stamped by Core from the forwarded token, so
+  ``owner_sub`` is **never** sent in a body or param; the adapter relies on
+  Core's owner-scoping and ignores the ``owner_sub`` the port passes (fakes use
+  it instead).
 - agent runs -> ``/api/v1/internal/agent-runs`` (ADR-0017 §4), created with an
   ``input_payload`` and **no thread**: Idea Scout has no conversation.
 - the founder's profile -> ``/api/v1/internal/user-profile/mine``.
@@ -29,11 +30,13 @@ from __future__ import annotations
 import json
 from typing import Any, Protocol
 
+from .definitions import DEFAULT_CADENCE_DAYS
 from .models import (
     RESEARCHING,
     AgentRunView,
     BuildType,
     BusinessModel,
+    CadencePreference,
     Candidate,
     ModelCatalogEntry,
     ScoutRun,
@@ -43,6 +46,7 @@ from .models import (
 _ROOT = "/api/v1/internal"
 _RUNS = f"{_ROOT}/owner-data/idea_scout_runs"
 _CANDIDATES = f"{_ROOT}/owner-data/idea_scout_candidates"
+_CADENCE = f"{_ROOT}/owner-data/idea_scout_cadence"
 _AGENT_RUNS = f"{_ROOT}/agent-runs"
 _USER_PROFILE = f"{_ROOT}/user-profile/mine"
 _PLUGIN_CONFIG = f"{_ROOT}/plugins/me/config"
@@ -115,6 +119,24 @@ def _run_from_row(row: dict[str, Any]) -> ScoutRun:
         deleted=row.get("deleted") or False,
         research_model=row.get("research_model"),
         business_model=row.get("business_model"),
+    )
+
+
+def _cadence_from_row(row: dict[str, Any]) -> CadencePreference:
+    """Both value columns are nullable, for the declared-default reason in the
+    manifest: the generated DDL applies no defaults, so a row written by an
+    older revision (or by anything other than this service) can carry NULL.
+
+    ``enabled`` reads NULL as false, matching how ``deleted`` is treated on a
+    run. ``cadence_days`` reads NULL as the built-in default rather than 0 —
+    zero would mean "always due", which is the one interpretation that spends
+    money on every page load.
+    """
+    days = row.get("cadence_days")
+    return CadencePreference(
+        id=row["id"],
+        enabled=bool(row.get("enabled")),
+        cadence_days=int(days) if days is not None else DEFAULT_CADENCE_DAYS,
     )
 
 
@@ -293,6 +315,56 @@ class CoreHttpGateway:
             if column in body and not isinstance(body[column], str):
                 body[column] = json.dumps(body[column])
         await self._t.request("PATCH", f"{_RUNS}/{run_id}", json=body)
+
+    # ── Cadence preference (#50) ─────────────────────────────────────────────
+
+    async def get_cadence(self, *, owner_sub: str) -> CadencePreference | None:
+        """The founder's cadence row, or ``None`` if they have never saved one.
+
+        No params and no ``owner_sub`` in the query, exactly like ``list_runs``:
+        Core's owner-data list route scopes to the caller from the forwarded
+        token, and that scoping — not anything this adapter sends — is what
+        stops one founder reading another's. Sending an owner here would be a
+        *second*, weaker filter that could be trusted by mistake.
+
+        One row per founder is a service-layer invariant (there is no unique
+        constraint to lean on), so a duplicate is possible in principle. The
+        first row wins deterministically rather than raising: a founder should
+        not be locked out of their own settings by a stray row.
+        """
+        rows = await self._t.request("GET", _CADENCE)
+        if not rows:
+            return None
+        return _cadence_from_row(rows[0])
+
+    async def create_cadence(
+        self, *, owner_sub: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        # No owner_sub in the body — Core stamps it from the forwarded token,
+        # the same as every other owner-scoped write in this file.
+        row = await self._t.request(
+            "POST", _CADENCE, json={"enabled": enabled, "cadence_days": cadence_days}
+        )
+        return _cadence_from_row(row)
+
+    async def update_cadence(
+        self, *, cadence_id: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        """Both columns are sent on every write, never just the one that changed.
+
+        ``enabled`` and ``cadence_days`` are the two halves of one setting, and
+        a PATCH carrying only half leaves the row in a state no screen ever
+        showed the founder.
+        """
+        await self._t.request(
+            "PATCH",
+            f"{_CADENCE}/{cadence_id}",
+            json={"enabled": enabled, "cadence_days": cadence_days},
+        )
+        # Built from what was written rather than from the response body: Core's
+        # PATCH response shape is not something this plugin should depend on for
+        # a value it already knows, and a non-2xx would have raised above.
+        return CadencePreference(id=cadence_id, enabled=enabled, cadence_days=cadence_days)
 
     # ── Agent runs ───────────────────────────────────────────────────────────
 

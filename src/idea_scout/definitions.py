@@ -46,6 +46,29 @@ MAX_CANDIDATES = 10
 #: are the least useful to avoid repeating.
 MAX_PREVIOUSLY_SUGGESTED = 50
 
+# ── The pull-based auto-scout cadence (#50, option A) ────────────────────────
+#
+# A founder returning to the surface with a stale last scout gets a fresh one
+# started for them. How stale is "stale" is an owner-scoped preference stored in
+# idea_scout_cadence; these are the bounds it is validated against and the value
+# a founder who has never touched the control falls back to.
+#
+# The default is deliberately "on at 7 days", which is exactly what the
+# hardcoded constant this replaces did — so nothing changes for a founder with
+# no stored row.
+
+#: What a founder with no stored preference gets. Changing this changes
+#: behaviour for every founder who has never set their own interval.
+DEFAULT_CADENCE_DAYS = 7
+
+#: Bounds on the interval, enforced server-side because it arrives from a
+#: client, and served to the frontend so the number input's min/max cannot
+#: drift from what the API will accept. One day is the tightest useful setting
+#: (a scout takes minutes, not hours); beyond a quarter the auto-start stops
+#: being a cadence and becomes an accident.
+MIN_CADENCE_DAYS = 1
+MAX_CADENCE_DAYS = 90
+
 # The founder's complexity preference, as rendered on the UI slider.
 MIN_COMPLEXITY = 1
 MAX_COMPLEXITY = 5

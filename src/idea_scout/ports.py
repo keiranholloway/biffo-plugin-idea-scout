@@ -20,6 +20,7 @@ from .models import (
     AgentRunView,
     BuildType,
     BusinessModel,
+    CadencePreference,
     Candidate,
     ModelCatalogEntry,
     ScoutRun,
@@ -100,6 +101,34 @@ class CoreGateway(Protocol):
         service advances several fields together (status plus synthesis_run_id,
         or status plus failure_reason) and doing that in one call keeps a run
         from being observed half-advanced by a concurrent poll."""
+        ...
+
+    # ── Cadence preference (#50) ─────────────────────────────────────────────
+
+    async def get_cadence(self, *, owner_sub: str) -> CadencePreference | None:
+        """This founder's stored cadence preference, or ``None`` if they have
+        never saved one.
+
+        ``None`` is not an error and not "off" — it means the founder has never
+        touched the control, and the service turns it into the built-in default
+        so their behaviour is unchanged. Only a stored row with ``enabled``
+        false is an OFF.
+        """
+        ...
+
+    async def create_cadence(
+        self, *, owner_sub: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        """Insert this founder's first cadence row. The owner is stamped by Core
+        from the forwarded token, like every other owner-scoped write."""
+        ...
+
+    async def update_cadence(
+        self, *, cadence_id: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        """Patch an existing cadence row. Takes the row id rather than the owner
+        because Core's owner-data routes address a single row by id and scope
+        the write to the caller themselves."""
         ...
 
     # ── Agent runs (the runtime) ─────────────────────────────────────────────

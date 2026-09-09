@@ -50,6 +50,12 @@ export interface FormOptions {
   models: ModelOption[]
   preferences: Preference[]
   complexity_levels: ComplexityLevel[]
+  /** The founder's cadence, bootstrapped here rather than fetched separately
+   * (#50). The page needs it on mount to decide whether to auto-start, and a
+   * fourth mount request would have been eight Lambda invocations against a
+   * ceiling of ten — the very fan-out #79 fixed. `getCadence` below is what
+   * re-reads it afterwards. */
+  cadence: Cadence
 }
 
 export interface ComplexityLevel {
@@ -87,6 +93,29 @@ export interface RunState {
   created_at: string | null
   in_flight: boolean
   failure_reason: string | null
+}
+
+/** A founder's auto-scout cadence, and what follows from it (#50).
+ *
+ * `next_due_at` and `is_due` are DERIVED server-side on every read, from the
+ * stored interval and the founder's most recent run — they are not columns.
+ * This client must not recompute either: the interval is per-founder now, so a
+ * local copy of the rule would be comparing against a number the founder may
+ * never have chosen. `is_due` is the only authority on whether returning to
+ * the page starts a scout.
+ */
+export interface Cadence {
+  /** False is an explicit OFF, and it suppresses the auto-start server-side. */
+  enabled: boolean
+  cadence_days: number
+  /** The range the API will accept, served so the number input's min/max
+   * cannot drift from what a save would actually allow. */
+  min_cadence_days: number
+  max_cadence_days: number
+  /** When the next automatic scout falls due, or `null` when cadence is off or
+   * there is no run to measure from. */
+  next_due_at: string | null
+  is_due: boolean
 }
 
 export interface ScoreAxis {
@@ -188,6 +217,14 @@ export function createApi(getIdToken: () => string | null | Promise<string | nul
       if (business_model) body.business_model = business_model
       return request<RunState>('POST', '/runs', body)
     },
+    getCadence: () => request<Cadence>('GET', '/cadence'),
+    // Both halves always travel together: they are one setting, and a partial
+    // write would leave the stored row in a state no screen ever showed.
+    // Returns the recomputed cadence, so the caller sees the new `next_due_at`
+    // that follows from what it just saved without a second round trip — and
+    // without deriving it locally.
+    setCadence: (enabled: boolean, cadence_days: number) =>
+      request<Cadence>('PUT', '/cadence', { enabled, cadence_days }),
     listRuns: () => request<RunState[]>('GET', '/runs'),
     getRun: (id: string) => request<RunState>('GET', `/runs/${id}`),
     getCandidates: (id: string) => request<CandidatesResponse>('GET', `/runs/${id}/candidates`),

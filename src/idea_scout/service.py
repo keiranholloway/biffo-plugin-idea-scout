@@ -28,16 +28,20 @@ import json
 import logging
 import uuid
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
 
 from .definitions import (
     CANDIDATES_TOOL_NAME,
+    DEFAULT_CADENCE_DAYS,
     FINDINGS_TOOL_NAME,
+    MAX_CADENCE_DAYS,
     MAX_CANDIDATES,
     MAX_COMPLEXITY,
     MAX_PREVIOUSLY_SUGGESTED,
+    MIN_CADENCE_DAYS,
     MIN_COMPLEXITY,
     PREFERENCE_KEYS,
     RESEARCH_AGENT_NAMES,
@@ -52,10 +56,13 @@ from .definitions import (
 from .models import (
     COMPLETE,
     FAILED,
+    IN_FLIGHT_STATUSES,
     RESEARCHING,
     SYNTHESISING,
     BuildType,
     BusinessModel,
+    CadencePreference,
+    CadenceState,
     Candidate,
     ScoutRun,
     UserProfile,
@@ -114,6 +121,23 @@ class UnknownModelError(IdeaScoutError):
     def __init__(self, model_id: str) -> None:
         self.model_id = model_id
         super().__init__(f"Research model not available: {model_id}")
+
+
+class InvalidCadenceError(IdeaScoutError):
+    """The requested auto-scout interval is outside the allowed range (#50).
+
+    Loud rather than clamped. A founder who asks for a scout every 500 days and
+    silently gets 90 has been told nothing, and a client sending 0 — which would
+    make every page load "due" and start a run — must learn that it is refused
+    rather than have it quietly reinterpreted.
+    """
+
+    def __init__(self, cadence_days: int) -> None:
+        self.cadence_days = cadence_days
+        super().__init__(
+            f"Cadence must be between {MIN_CADENCE_DAYS} and {MAX_CADENCE_DAYS} "
+            f"days; got {cadence_days}."
+        )
 
 
 class MalformedCandidatesError(IdeaScoutError):
@@ -372,6 +396,75 @@ class IdeaScoutService:
         await self._load_owned(owner_sub=owner_sub, run_id=run_id)
         await self._core.update_run(run_id=run_id, deleted=True)
 
+    # ── Cadence (#50) ────────────────────────────────────────────────────────
+
+    async def get_cadence(self, *, owner_sub: str) -> CadencePreference:
+        """This founder's cadence preference, or the built-in default.
+
+        **No stored row is not "off".** A founder who has never opened the
+        control gets ``enabled=True`` at :data:`DEFAULT_CADENCE_DAYS`, which is
+        precisely what the hardcoded constant this replaces did — so shipping
+        the preference changes nothing for anyone who does not use it. Only a
+        stored row with ``enabled`` false suppresses the auto-start.
+        """
+        stored = await self._core.get_cadence(owner_sub=owner_sub)
+        if stored is None:
+            return CadencePreference(enabled=True, cadence_days=DEFAULT_CADENCE_DAYS)
+        return stored
+
+    async def set_cadence(
+        self, *, owner_sub: str, enabled: bool, cadence_days: int
+    ) -> CadencePreference:
+        """Save this founder's cadence preference, inserting or patching.
+
+        Core's owner-data routes have no upsert, so "one row per founder" is
+        maintained here: read, then POST if there is nothing and PATCH if there
+        is. Racing two saves could in principle leave two rows, which is why
+        the read side takes the first deterministically rather than raising —
+        a founder must never be locked out of their own settings.
+
+        ``cadence_days`` is validated **even when ``enabled`` is false**,
+        because it is remembered across an off/on toggle: an out-of-range value
+        accepted while off would come back the moment they switch on.
+
+        Validated here and not only in the route model, for the same reason
+        complexity is: this is the layer that owns the rule, and a second
+        caller must not be able to route around it.
+        """
+        if not MIN_CADENCE_DAYS <= cadence_days <= MAX_CADENCE_DAYS:
+            raise InvalidCadenceError(cadence_days)
+
+        stored = await self._core.get_cadence(owner_sub=owner_sub)
+        if stored is None or stored.id is None:
+            return await self._core.create_cadence(
+                owner_sub=owner_sub, enabled=enabled, cadence_days=cadence_days
+            )
+        return await self._core.update_cadence(
+            cadence_id=stored.id, enabled=enabled, cadence_days=cadence_days
+        )
+
+    async def cadence_state(self, *, owner_sub: str, now: datetime | None = None) -> CadenceState:
+        """The preference plus when the next scout is due and whether it is due
+        **now** — the single authority on the auto-start.
+
+        This is the "derive it" half of the feature. ``next_due_at`` is computed
+        from the stored interval and the most recent run's ``created_at`` on
+        every read; nothing writes it down, so there is no second copy to fall
+        out of step with the preference the founder just changed. The frontend
+        reads ``is_due`` rather than recomputing staleness against a constant of
+        its own — that duplicate is what this change removes.
+        """
+        preference = await self.get_cadence(owner_sub=owner_sub)
+        # Most-recent-first and soft-deleted rows already excluded, so [0] is
+        # the run to measure from. A deleted run must not hold the cadence
+        # open: the founder removed it, and it is no longer their last scout.
+        runs = await self.list_runs(owner_sub=owner_sub)
+        return _derive_cadence_state(
+            preference=preference,
+            most_recent=runs[0] if runs else None,
+            now=now if now is not None else datetime.now(UTC),
+        )
+
     # ── State transitions ────────────────────────────────────────────────────
 
     async def _advance_research(self, run: ScoutRun) -> ScoutRun:
@@ -626,6 +719,73 @@ class IdeaScoutService:
         if previously_suggested:
             brief["previously_suggested"] = list(previously_suggested)
         return brief
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    """Core's ``created_at`` as an aware datetime, or ``None`` if unreadable.
+
+    Tolerates the trailing ``Z`` form (``fromisoformat`` accepts it on 3.11+,
+    but the fakes and older rows are not guaranteed to be uniform) and assumes
+    UTC for a naive value, because every timestamp Core stamps is UTC.
+    """
+    if not value:
+        return None
+    text = value.strip()
+    if text.endswith(("Z", "z")):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _derive_cadence_state(
+    *,
+    preference: CadencePreference,
+    most_recent: ScoutRun | None,
+    now: datetime,
+) -> CadenceState:
+    """Turn a stored preference plus the founder's latest run into a decision.
+
+    Pure, and separated from the reads so every branch below is testable without
+    a gateway. The branches, and why each is what it is:
+
+    - **Off** — nothing is ever due. This is the OFF state doing real work: it
+      suppresses the auto-start at the only place that decides it, rather than
+      hiding a control while the run still fires.
+    - **No runs at all** — nothing is due. A founder who has never scouted is
+      not "returning to a stale one"; they are new, and there is nothing to
+      replay anyway.
+    - **The latest run is in flight** — nothing is due, because a scout is
+      already running. This is the idempotency guard, and it is read from
+      server truth on every request, so a refresh or a second tab moments after
+      an auto-start sees the same fact and does not fire again.
+    - **An unreadable timestamp** — due. Core always stamps ``created_at``, so
+      this can only be a malformed value; treating it as "we do not know, so
+      act as if it is old" costs at most one extra run, where treating it as
+      fresh would silently never offer that founder a scout again.
+    """
+    off = CadenceState(
+        enabled=preference.enabled,
+        cadence_days=preference.cadence_days,
+        next_due_at=None,
+        is_due=False,
+    )
+    if not preference.enabled or most_recent is None:
+        return off
+
+    in_flight = most_recent.status in IN_FLIGHT_STATUSES
+    started = _parse_timestamp(most_recent.created_at)
+    if started is None:
+        return replace(off, is_due=not in_flight)
+
+    due_at = started + timedelta(days=preference.cadence_days)
+    return replace(
+        off,
+        next_due_at=due_at.isoformat(),
+        is_due=not in_flight and now >= due_at,
+    )
 
 
 def _profile_payload(profile: UserProfile) -> dict[str, Any]:

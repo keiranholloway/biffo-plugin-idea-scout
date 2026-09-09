@@ -37,6 +37,16 @@ vi.mock("./lib/api", async (importOriginal) => {
         models: [],
         preferences: [],
         complexity_levels: [{ value: 3, label: "moderate" }],
+        // Bootstrapped inside this response rather than fetched separately —
+        // which is exactly what keeps the mount at three calls (#50/#79).
+        cadence: {
+          enabled: true,
+          cadence_days: 7,
+          min_cadence_days: 1,
+          max_cadence_days: 90,
+          next_due_at: null,
+          is_due: false,
+        },
       }),
       getLastUsedModel: track("getLastUsedModel", null),
       listRuns: track("listRuns", []),
@@ -44,6 +54,10 @@ vi.mock("./lib/api", async (importOriginal) => {
       startRun: vi.fn(),
       deleteRun: vi.fn(),
       getCandidates: vi.fn(),
+      // Tracked, not stubbed silently: if the cadence were ever fetched on
+      // mount again it would show up in the count below rather than hiding.
+      getCadence: track("getCadence", {}),
+      setCadence: vi.fn(),
     }),
   };
 });
