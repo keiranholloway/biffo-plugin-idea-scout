@@ -107,6 +107,87 @@ def test_reproduces_the_operators_own_labels():
     assert result.novelty_score == 0.25
 
 
+def test_agrees_with_the_held_out_titles_and_pitches_run():
+    """Genuine held-out validation (biffo-fleet prosecutor issue #134).
+
+    ``test_reproduces_the_operators_own_labels`` above is circular by
+    construction: ``NOVELTY_SIMILARITY_THRESHOLD`` was read directly off the
+    similarities that fixture produces (see the constant's own comment in
+    ``novelty.py``), so that test cannot fail for any threshold in the gap
+    those four points happen to leave. It is not evidence the judge
+    generalises to a point it was not fitted against.
+
+    This test supplies one: the operator's titles+pitches experiment (PR #58
+    / biffo-platform#118, referenced from #49's 2026-07-29 comment), run
+    *after* the four-candidate fixture above and never used to pick 0.10.
+    That run returned 2 candidates, both judged near-duplicate by the
+    operator, one an explicitly verbatim reuse of the prior "BedrockBudget"
+    product name with a reworded pitch:
+
+        "the names also got closer, not further apart:
+        `BedrockBudget — predictive cost & spend-cap guardrail for AWS
+        AI/ML workloads` -> `BedrockBudget — predictive spend-cap guardrail
+        for small teams' AWS AI/ML workloads` ... the same product name,
+        reused verbatim"
+
+    The second of that run's two candidates is not used here: its exact
+    title and pitch were never recorded anywhere retrievable in #49's
+    thread or its linked PRs, only the aggregate count (2 candidates, 2
+    near-duplicates). Inventing text for it would defeat the point of a
+    held-out check, so this holds out only the one point the record
+    actually contains — issue #134's suggested resolution (b) asks for "at
+    least one".
+
+    ``prior`` here is the founder's actual accumulated history at the time
+    of this run: the four-candidate fixture's own prior *plus* that
+    fixture's four scored candidates, because the titles+pitches run
+    happened after the titles-only run those candidates came from — a
+    founder's own prior output becomes history for their next run, exactly
+    as ``_previously_suggested`` (#49's real mechanism) reads it.
+
+    If this disagreed with the operator's label, the fix would be to say so
+    and stop — not to move the threshold or the fixture to force agreement.
+    It agrees.
+    """
+    prior = [
+        {"title": "AgentCost", "pitch": "Bedrock token spend & cost-attribution dashboard"},
+        {"title": "BedrockGuard", "pitch": ""},
+        {"title": "Compliance-Evidence Autopilot for Fintechs on AWS/GCP", "pitch": ""},
+        {"title": "Cloud Cost & Config Drift Watchdog", "pitch": ""},
+        # The titles-only run's own four candidates, scored above, which by
+        # the time of the titles+pitches run are also this founder's history.
+        {
+            "title": "BedrockBudget",
+            "pitch": "predictive cost & spend-cap guardrail for AWS AI/ML workloads",
+        },
+        {
+            "title": "MV3 Rescue",
+            "pitch": "drop-in replacements for extensions that went dark",
+        },
+        {
+            "title": "PCI Autopilot",
+            "pitch": "continuous compliance evidence for fintech teams on AWS",
+        },
+        {
+            "title": "AI-Spend Anomaly Alerts",
+            "pitch": "Bedrock/LLM token-cost watchdog",
+        },
+    ]
+    held_out_candidate = {
+        "title": "BedrockBudget",
+        "pitch": "predictive spend-cap guardrail for small teams' AWS AI/ML workloads",
+    }
+
+    result = score_novelty(candidates=[held_out_candidate], prior=prior)
+
+    assert result.candidates[0].is_novel is False, (
+        "held-out point disagrees with the operator's own label (near-duplicate): "
+        f"similarity={result.candidates[0].similarity} "
+        f"closest={result.candidates[0].closest_prior_title}"
+    )
+    assert result.candidates[0].closest_prior_title == "BedrockBudget"
+
+
 # ── Service-level tests ──────────────────────────────────────────────────────
 
 

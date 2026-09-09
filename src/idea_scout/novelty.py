@@ -58,6 +58,24 @@ from dataclasses import dataclass
 #: closest prior candidate, and the closest of the three judged near-duplicate
 #: scored 0.151 — nearly a 4x gap. 0.10 sits with headroom on both sides of
 #: that gap rather than against either edge of it.
+#:
+#: **This makes that four-point test circular, not merely reproduced**
+#: (biffo-plugin-idea-scout#134): the same four points that set 0.10 are the
+#: only points ``test_reproduces_the_operators_own_labels`` checks it against,
+#: so that test cannot fail for any threshold in ~(0.038, 0.151) and is not,
+#: on its own, evidence the judge generalises. Earlier revisions of this
+#: comment and the PR that introduced it claimed the threshold was "chosen
+#: once, not iterated against these four points" — false; it was read
+#: directly off their computed similarities, as the paragraph above already
+#: said.
+#:
+#: ``test_agrees_with_the_held_out_titles_and_pitches_run`` adds one point the
+#: threshold was never fitted against: the titles+pitches experiment recorded
+#: on #49 (PR #58 / biffo-platform#118, 2026-07-29), independent of the four
+#: above. It agrees (0.10 stays on the correct side), which is *some* evidence
+#: beyond the circular test — one point, not a validated model. It was not
+#: adjusted to make that point agree; the memo on #49 requires abandoning
+#: the approach on a held-out disagreement, never tuning to erase one.
 NOVELTY_SIMILARITY_THRESHOLD = 0.10
 
 _NON_ALNUM = re.compile(r"[^a-z0-9 ]")
