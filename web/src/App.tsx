@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CandidateCard } from "./components/CandidateCard";
 import { RunForm } from "./components/RunForm";
+import { ageInDays, isStale } from "./lib/cadence";
 import {
   ApiError,
   createApi,
@@ -15,6 +16,14 @@ import {
 } from "./lib/api";
 import { getCurrentSession, getFreshIdToken } from "./lib/auth";
 import { startedAt } from "./lib/started-at";
+
+/** What triggered a `startRun` call, so the founder can be told why a scout
+ * appeared rather than it simply showing up (#50). `undefined` is a normal,
+ * founder-initiated "Run now". */
+interface AutoStartTrigger {
+  /** Whole days since the run being replaced, for the explanation's copy. */
+  ageDays: number | null;
+}
 
 /** How often to re-read an in-flight run.
  *
@@ -44,6 +53,20 @@ export default function App() {
   // blames an admin (#23).
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set only when the run currently shown was started automatically because
+  // the founder's previous one was stale (#50) — keyed by run id so it stops
+  // applying the moment `current` becomes a different run. Never persisted:
+  // it explains what just happened in *this* visit, not history.
+  const [autoStarted, setAutoStarted] = useState<{
+    runId: string;
+    ageDays: number | null;
+  } | null>(null);
+  // Guards against firing the auto-start twice from one mount (e.g. React's
+  // dev-mode double-invoke of effects). It does NOT and cannot guard against
+  // a second browser tab — that guard is `!mostRecent.in_flight` below, which
+  // reads the server's own state fresh on every mount instead of relying on
+  // anything shared between tabs.
+  const autoStartAttempted = useRef(false);
 
   // Created once (lazy initializer — `createApi` runs exactly once, not on
   // every render): `getFreshIdToken` is a stable module-level function that
@@ -82,6 +105,37 @@ export default function App() {
         setSelectedModel(lastUsed);
         setRuns(existing);
         setLoaded(true);
+
+        // Pull-based cadence (#50): `existing` is most-recent-first (see
+        // service.list_runs), so existing[0] is the one to judge staleness
+        // against. Skipped entirely when there is no history — a founder who
+        // has never run a scout is not "returning to a stale one", they are
+        // new, and there is nothing to replay anyway.
+        //
+        // `!mostRecent.in_flight` is the idempotency guard, and it is read
+        // fresh from the server on every mount rather than from anything
+        // shared client-side: once this (or any) trigger has started a run,
+        // that run IS the most recent one and it is in flight, so a refresh,
+        // a second tab, or a back-navigation moments later reads that same
+        // fact and does not fire again. `autoStartAttempted` only covers a
+        // second effect firing within *this* mount.
+        const mostRecent = existing[0];
+        if (
+          mostRecent != null &&
+          !mostRecent.in_flight &&
+          !autoStartAttempted.current &&
+          isStale(mostRecent.created_at)
+        ) {
+          autoStartAttempted.current = true;
+          void startRun(
+            mostRecent.build_type,
+            mostRecent.complexity,
+            mostRecent.preferences,
+            mostRecent.research_model ?? undefined,
+            mostRecent.business_model ?? undefined,
+            { ageDays: ageInDays(mostRecent.created_at) },
+          );
+        }
       })
       .catch((err: unknown) => {
         // A 401 here means the portal session has expired, not that this
@@ -139,6 +193,7 @@ export default function App() {
     prefs: string[] = [],
     research_model?: string,
     business_model?: string,
+    autoTrigger?: AutoStartTrigger,
   ) {
     setStarting(true);
     setError(null);
@@ -153,8 +208,12 @@ export default function App() {
       setCurrent(run);
       setCandidates([]);
       setRuns(await api.listRuns());
+      setAutoStarted(
+        autoTrigger != null ? { runId: run.run_id, ageDays: autoTrigger.ageDays } : null,
+      );
     } catch (err: unknown) {
       setError(describe(err));
+      if (autoTrigger != null) setAutoStarted(null);
     } finally {
       setStarting(false);
     }
@@ -273,6 +332,15 @@ export default function App() {
                 New scout
               </button>
             </div>
+
+            {autoStarted?.runId === current.run_id && (
+              <p className="auto-started" role="status">
+                Started automatically —{" "}
+                {autoStarted.ageDays != null
+                  ? `your last scout was ${autoStarted.ageDays} day${autoStarted.ageDays === 1 ? "" : "s"} old.`
+                  : "it had been a while since your last scout."}
+              </p>
+            )}
 
             {current.in_flight && (
               <p className="in-flight" role="status">
