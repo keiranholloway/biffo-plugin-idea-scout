@@ -54,7 +54,19 @@ dev = [
 # rather than a live exposure — but `pip-audit` reads the resolved tree, not the
 # reachable code. Do not remove it as unnecessary: without it the lockfile
 # resolves 49.0.0 and `scripts/py-dependency-audit.sh` reports a vulnerability.
-constraint-dependencies = ["cryptography>=50.0.0"]
+#
+# `pip` itself arrives transitively too — `pip-audit` (a dev dependency) pulls
+# `pip-api`, which pulls `pip` — so there is likewise no direct requirement
+# whose floor to raise; the constraint is what pins it.
+#
+# PYSEC-2026-3721 / GHSA-qwm4-qh6w-59xr / CVE-2026-13346: pip mishandled
+# doubly-encoded package URLs from an index, allowing files to be installed to
+# arbitrary locations on disk even when installing wheels (materially reachable
+# only via `pip download --only-binary` against a malicious index — this
+# plugin's CI never does that). Fixed in 26.2. Preventative, same as the
+# cryptography constraint above: without it the lockfile resolves 26.1.2 and
+# `scripts/py-dependency-audit.sh` reports a vulnerability.
+constraint-dependencies = ["cryptography>=50.0.0", "pip>=26.2"]
 
 [build-system]
 requires = ["hatchling"]
