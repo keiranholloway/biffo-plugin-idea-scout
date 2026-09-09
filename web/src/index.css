@@ -380,6 +380,19 @@ input[type="text"] {
   font-size: 0.92rem;
 }
 
+/* The pull-based cadence (#50): distinct from `.in-flight` so a founder can
+   tell "this was started for me" apart from "this is still running" — the
+   two can be true at once and both need to be visible. */
+.auto-started {
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
 /* ── Candidate card ─────────────────────────────────────────────────────── */
 
 .candidate {

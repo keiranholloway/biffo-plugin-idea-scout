@@ -79,6 +79,11 @@ export interface RunState {
   complexity_label: string
   preferences: string[]
   research_model?: string
+  // Echoed back by the server (app.py's `_run_state`) but not previously
+  // typed here. Needed to replay a past run's settings when auto-starting a
+  // fresh one for a returning founder (#50) — `null` means "no preference",
+  // same convention as `startRun`'s own optional parameter.
+  business_model?: string | null
   created_at: string | null
   in_flight: boolean
   failure_reason: string | null
