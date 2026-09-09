@@ -25,6 +25,7 @@ run, does fail the run — with a reason they can read.
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -66,7 +67,10 @@ from .models import (
     ScoutRun,
     UserProfile,
 )
+from .novelty import score_novelty
 from .ports import CoreGateway
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class IdeaScoutError(Exception):
@@ -539,6 +543,15 @@ class IdeaScoutService:
                 run, "The analysis returned no ideas at all. Try running again."
             )
 
+        # Log-only novelty measurement (#49, option C) — read *before*
+        # save_candidates so this run's own candidates cannot leak into their
+        # own "prior" comparison set. Generation is untouched: this happens
+        # after synthesis has already produced its final answer, changes
+        # nothing about what is saved or returned, and nothing here is
+        # persisted — see novelty.py's module docstring for what this
+        # deliberately does not do.
+        await self._log_novelty(run=run, candidates=candidates)
+
         await self._core.save_candidates(run_id=run.id, candidates=candidates, model=view.model)
         await self._core.update_run(run_id=run.id, status=COMPLETE)
         return _with(run, status=COMPLETE)
@@ -628,6 +641,34 @@ class IdeaScoutService:
             if len(titles) == MAX_PREVIOUSLY_SUGGESTED:
                 break
         return titles
+
+    async def _log_novelty(self, *, run: ScoutRun, candidates: list[dict[str, Any]]) -> None:
+        """Log this run's novelty score against the founder's own prior runs
+        (#49, option C). Log-only, by the owner's explicit decision: nothing
+        here is persisted, nothing here filters or reorders ``candidates``,
+        and a failure to compute or log the score must never fail the run it
+        is measuring — the measurement is strictly secondary to the run it
+        describes.
+
+        ``prior`` reads the same owner-scoped, cross-run query
+        ``_previously_suggested`` uses (``list_owner_candidates``), called
+        before ``save_candidates`` so this run's own candidates cannot yet be
+        in it — comparing a run against itself would trivially score zero
+        novelty.
+        """
+        try:
+            prior = await self._core.list_owner_candidates(owner_sub=run.owner_sub)
+            result = score_novelty(
+                candidates=[{"title": c["title"], "pitch": c["pitch"]} for c in candidates],
+                prior=[{"title": c.title, "pitch": c.pitch} for c in prior],
+            )
+        except Exception:  # deliberately broad — a measurement must never fail the run
+            _LOGGER.exception(f"Novelty scoring failed for run {run.id}; run is unaffected")
+            return
+        detail = [(c.title, round(c.similarity, 3), c.is_novel) for c in result.candidates]
+        _LOGGER.info(
+            f"Novelty for run {run.id}: score={result.novelty_score:.2f} candidates={detail}"
+        )
 
     @staticmethod
     def _build_brief(
