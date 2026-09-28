@@ -16,49 +16,51 @@
  *   `startRun` not being called against a run old enough that any live cadence
  *   would have replaced it.
  *
- * ## Why every assertion in this file goes through `eventually()`, not `waitFor`
+ * ## Why this file no longer waits on a real-wall-clock budget at all
  *
- * #136 → #137 → #138 → #139 → #140 is the SAME flake class turning up one
- * instance at a time: CI CPU contention delays this process getting
- * scheduled, so a real-wall-clock `waitFor` budget elapses before the app
- * ever got the CPU time to settle. Each prior fix widened whichever
- * `waitFor` had just been observed failing, to 3000ms — and #140's own
- * repro proved that insufficient at the CLASS level: under the exact
- * contention recipe from #138, `refuses to save an interval outside the
- * served bounds, and says why` failed on its ALREADY-WIDENED 3000ms
- * `waitFor`.
+ * #136 → #137 → #138 → #139 → #140 → #142 → #143 is the SAME flake class
+ * turning up one instance at a time: CI CPU contention delays this process
+ * getting scheduled, so a real-wall-clock `waitFor` budget elapses before the
+ * app ever got the CPU time to settle. Each prior fix widened whichever
+ * `waitFor` had just been observed failing — first per call site to 3000ms
+ * (#137/#139), then via a single shared `eventually()` helper raised to
+ * 12000ms (#141) — and #143's own repro proved that insufficient too: under
+ * sufficient contention (reproduced live, ~36 load average on 12 cores), the
+ * SAME two tests still exceeded the widened 12000ms budget. A fixed
+ * numeric budget, however generous, remains a guess a sufficiently contended
+ * runner can still exceed — widening it again would just be the fourth
+ * instance of the same mitigation.
  *
- * #140 asked this file to try fake timers first, on the theory that a
- * simulated clock removes the real-wall-clock dependency entirely. Tried
- * and rejected here: under `vi.useFakeTimers()`, this component's own
- * render pipeline needed simulated advancement within a few hundred
- * milliseconds of whatever total budget was granted before it reliably
- * settled — i.e. the "budget" stopped bounding CI contention and started
- * bounding an opaque number of internal scheduler hops instead, which is
- * exactly the "fights the component's own async data-fetching" case #140's
- * own text names as the fallback trigger. A fixed numeric budget picked to
- * survive that is no more principled than a fixed real-ms one — it is the
- * same class of guess, just against simulated ticks instead of real ones.
+ * So this file asserts off a different signal entirely: the actual promises
+ * the mocked API/auth calls return, awaited to a **fixed point** — call the
+ * mocks, await everything currently pending inside `act()`, check whether
+ * that produced any *new* calls, and repeat until a pass makes none. That is
+ * `settle()` below. It has no timeout and no real-clock budget: under CPU
+ * contention it simply takes longer *in real time* to run the same fixed
+ * number of hops, because the awaits inside `act()` really do wait for the
+ * component's actual continuation to run — there is nothing left to race.
+ * The only bound is `MAX_SETTLE_HOPS`, a count of logical chain hops (how
+ * many times the component's own code calls another mock in reaction to a
+ * previous one resolving), which is a property of the code path, not of how
+ * fast the CPU happens to be scheduled — unlike the fake-timer "opaque number
+ * of scheduler hops" #140 tried and rejected, this count is not tuned by
+ * hand: it is *detected*, by re-checking call counts every hop and stopping
+ * the moment a hop adds nothing, so a slow-but-genuine settle of any depth
+ * still passes and only a genuinely stuck app (an actual bug, not
+ * contention) can exhaust it.
  *
- * So this is the sanctioned fallback instead: an EXHAUSTIVE sweep, in one
- * pass, of every `waitFor`/assertion pair in the file against both named
- * shapes of the class —
+ * `TEST_TIMEOUT_MS` remains as a coarse, per-test hang backstop — it no
+ * longer does any of the actual synchronizing work, `settle()` does, so it is
+ * a detector for a truly stuck test, not the mechanism racing CI contention.
  *
- *   1. a `waitFor` on a mock call left at a tight budget, and
- *   2. a synchronous assertion sitting unwrapped immediately after an
- *      unrelated `waitFor`, assuming its condition implies this one's.
- *
- * `eventually()` is the only spelling either shape may use from here on:
- * every assertion that depends on an async render settling is retried
- * against its OWN condition, on one shared, generous, single-sourced
- * budget — not an unwrapped assumption riding an unrelated wait, and not a
- * hand-tuned number re-picked per call site. Vitest's own per-test timeout
- * is raised alongside it (`TEST_TIMEOUT_MS`) so it cannot mask a slow-but-
- * genuine pass the way the file's own comments previously warned the
- * default 5000ms would.
+ * Every assertion that depends on an async render settling now runs as a
+ * plain synchronous `expect(...)` immediately after `await settle()`, rather
+ * than through a polling wrapper — once `settle()` returns, the state it
+ * gathered promises for is already committed, so polling again would only
+ * reintroduce the thing this rewrite removes.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const listRuns = vi.fn()
@@ -66,33 +68,47 @@ const startRun = vi.fn()
 const getCadence = vi.fn()
 const setCadence = vi.fn()
 
+/** What the server currently reports for this founder's cadence. Set by
+ * `serve()` before each render; read by both the bootstrap and `getCadence`. */
+let served: ReturnType<typeof cadenceFixture>
+
+// Tracked (not bare arrow functions) so `settle()` below can see when the app
+// calls them and await the exact promise it is itself chained from — the
+// mechanism this file now uses instead of a real-wall-clock `waitFor` budget.
+const getCurrentSession = vi.fn(() =>
+  Promise.resolve({
+    getIdToken: () => ({ getJwtToken: () => 'test-token' }),
+  }),
+)
+
 vi.mock('./lib/auth', () => ({
-  getCurrentSession: () =>
-    Promise.resolve({
-      getIdToken: () => ({ getJwtToken: () => 'test-token' }),
-    }),
+  getCurrentSession: () => getCurrentSession(),
   getFreshIdToken: () => Promise.resolve('test-token'),
 }))
+
+const getFormOptions = vi.fn(() =>
+  Promise.resolve({
+    build_types: [{ key: 'micro-saas', label: 'MicroSaaS', description: null }],
+    business_models: [],
+    models: [],
+    preferences: [],
+    complexity_levels: [{ value: 3, label: 'moderate' }],
+    // The cadence arrives INSIDE the bootstrap, exactly as the real client
+    // receives it (#50) — kept in step with `getCadence` below via the one
+    // `served` value, so a test cannot accidentally assert against a cadence
+    // the page was never given.
+    cadence: served,
+  }),
+)
+const getLastUsedModel = vi.fn(() => Promise.resolve(null))
 
 vi.mock('./lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api')>()
   return {
     ...actual,
     createApi: () => ({
-      // The cadence arrives INSIDE the bootstrap, exactly as the real client
-      // receives it (#50) — kept in step with `getCadence` below via the one
-      // `served` value, so a test cannot accidentally assert against a cadence
-      // the page was never given.
-      getFormOptions: () =>
-        Promise.resolve({
-          build_types: [{ key: 'micro-saas', label: 'MicroSaaS', description: null }],
-          business_models: [],
-          models: [],
-          preferences: [],
-          complexity_levels: [{ value: 3, label: 'moderate' }],
-          cadence: served,
-        }),
-      getLastUsedModel: () => Promise.resolve(null),
+      getFormOptions: () => getFormOptions(),
+      getLastUsedModel: () => getLastUsedModel(),
       listRuns,
       getRun: vi.fn(),
       startRun,
@@ -106,30 +122,61 @@ vi.mock('./lib/api', async (importOriginal) => {
 
 const { default: App } = await import('./App')
 
-/** What the server currently reports for this founder's cadence. Set by
- * `serve()` before each render; read by both the bootstrap and `getCadence`. */
-let served: ReturnType<typeof cadenceFixture>
-
 const DAY_MS = 24 * 60 * 60 * 1000
 
-// Single shared budget for every assertion in this file (see the file-level
-// comment for why). Well above what #140 proved insufficient (3000ms,
-// already widened once, still failed under the exact contention recipe
-// below) — chosen empirically against that same recipe, not picked in the
-// abstract; see the PR body for the repro run this survived.
-const WAIT_TIMEOUT_MS = 12_000
-
-// Vitest's own per-test deadline is 5000ms by default, which is BELOW
-// `WAIT_TIMEOUT_MS` and would otherwise fire first and mask a slow-but-
-// genuine pass with a less informative error. A test with several
-// sequential `eventually()` calls can legitimately need several budgets
-// worth of headroom under adversarial contention.
+// Vitest's own per-test deadline; raised because a test can legitimately need
+// several `settle()` chains' worth of headroom under adversarial contention.
+// This is a hang backstop, not the synchronization mechanism — see the
+// file-level comment.
 const TEST_TIMEOUT_MS = 45_000
 
+// A count of logical chain hops (one mock's resolution causing the app to
+// call another), not a time budget — see the file-level comment. The deepest
+// chain in this file is the auto-start path (session → bootstrap →
+// startRun → listRuns → getCadence), four hops; this leaves generous room
+// without being unbounded.
+const MAX_SETTLE_HOPS = 20
+
+/** Every mock whose resolution the app under test reacts to by calling
+ * another one of these, or by committing state this file asserts against. */
+const TRACKED_MOCKS = [
+  getCurrentSession,
+  getFormOptions,
+  getLastUsedModel,
+  listRuns,
+  startRun,
+  getCadence,
+  setCadence,
+] as const
+
 /** The only way an assertion in this file may depend on an async render
- * settling — see the file-level comment for why. */
-async function eventually(assertion: () => void) {
-  await waitFor(assertion, { timeout: WAIT_TIMEOUT_MS })
+ * settling — see the file-level comment for why this replaced `waitFor`.
+ *
+ * Awaits every promise any tracked mock has returned so far, inside `act()`
+ * so React commits and flushes the effects that follow, then checks whether
+ * that produced any new calls to a tracked mock. Repeats until a pass adds
+ * none — a real fixed point, detected rather than guessed, so it holds
+ * however many hops the actual code path needs and however long each one
+ * takes to actually run under contention. */
+async function settle() {
+  let callCounts = TRACKED_MOCKS.map((mock) => mock.mock.calls.length)
+  for (let hop = 0; hop < MAX_SETTLE_HOPS; hop++) {
+    await act(async () => {
+      await Promise.all(
+        TRACKED_MOCKS.flatMap((mock) =>
+          mock.mock.results.map((result) =>
+            Promise.resolve(result.value).catch(() => undefined),
+          ),
+        ),
+      )
+    })
+    const newCounts = TRACKED_MOCKS.map((mock) => mock.mock.calls.length)
+    if (newCounts.every((count, index) => count === callCounts[index])) return
+    callCounts = newCounts
+  }
+  throw new Error(
+    `settle() did not converge after ${MAX_SETTLE_HOPS} hops — the app is still issuing new calls to a tracked mock. Either a genuine loop, or a new call path that needs adding to TRACKED_MOCKS.`,
+  )
 }
 
 function run(overrides: Record<string, unknown> = {}) {
@@ -181,6 +228,12 @@ describe('the cadence control (#50)', () => {
     startRun.mockReset()
     getCadence.mockReset()
     setCadence.mockReset()
+    // These three carry a persistent implementation (read `served` live), so
+    // only their call history is cleared — `mockReset()` would drop the
+    // implementation along with it.
+    getCurrentSession.mockClear()
+    getFormOptions.mockClear()
+    getLastUsedModel.mockClear()
     listRuns.mockResolvedValue([run()])
     serve()
   })
@@ -191,9 +244,10 @@ describe('the cadence control (#50)', () => {
     'shows the founder that cadence is on, and at what interval',
     async () => {
       render(<App />)
+      await settle()
 
-      await eventually(() => expect(toggle()).toBeChecked())
-      await eventually(() => expect(interval()).toHaveValue(7))
+      expect(toggle()).toBeChecked()
+      expect(interval()).toHaveValue(7)
     },
     TEST_TIMEOUT_MS,
   )
@@ -202,10 +256,9 @@ describe('the cadence control (#50)', () => {
     'shows when the next automatic scout falls due',
     async () => {
       render(<App />)
+      await settle()
 
-      await eventually(() =>
-        expect(document.body.textContent).toMatch(/next scout due in 3 days/i),
-      )
+      expect(document.body.textContent).toMatch(/next scout due in 3 days/i)
     },
     TEST_TIMEOUT_MS,
   )
@@ -219,14 +272,10 @@ describe('the cadence control (#50)', () => {
       serve({ enabled: false, next_due_at: null, is_due: false })
 
       render(<App />)
+      await settle()
 
-      await eventually(() => expect(toggle()).not.toBeChecked())
-      // Was an unwrapped synchronous assertion riding the waitFor above —
-      // one of #140's two named shapes of the class. Its own condition now
-      // retries independently rather than assuming the toggle's did.
-      await eventually(() =>
-        expect(document.body.textContent).toMatch(/only run when you press run now/i),
-      )
+      expect(toggle()).not.toBeChecked()
+      expect(document.body.textContent).toMatch(/only run when you press run now/i)
     },
     TEST_TIMEOUT_MS,
   )
@@ -240,9 +289,10 @@ describe('the cadence control (#50)', () => {
       serve({ min_cadence_days: 2, max_cadence_days: 45 })
 
       render(<App />)
+      await settle()
 
-      await eventually(() => expect(interval()).toHaveAttribute('min', '2'))
-      await eventually(() => expect(interval()).toHaveAttribute('max', '45'))
+      expect(interval()).toHaveAttribute('min', '2')
+      expect(interval()).toHaveAttribute('max', '45')
     },
     TEST_TIMEOUT_MS,
   )
@@ -254,12 +304,14 @@ describe('the cadence control (#50)', () => {
     async () => {
       setCadence.mockResolvedValue(cadenceFixture({ cadence_days: 14 }))
       render(<App />)
-      await eventually(() => expect(interval()).toHaveValue(7))
+      await settle()
+      expect(interval()).toHaveValue(7)
 
       fireEvent.change(interval(), { target: { value: '14' } })
       fireEvent.click(save())
+      await settle()
 
-      await eventually(() => expect(setCadence).toHaveBeenCalledWith(true, 14))
+      expect(setCadence).toHaveBeenCalledWith(true, 14)
     },
     TEST_TIMEOUT_MS,
   )
@@ -274,16 +326,15 @@ describe('the cadence control (#50)', () => {
         cadenceFixture({ cadence_days: 30, next_due_at: new Date(Date.now() + 20 * DAY_MS).toISOString() }),
       )
       render(<App />)
-      await eventually(() => expect(interval()).toHaveValue(7))
+      await settle()
+      expect(interval()).toHaveValue(7)
 
       fireEvent.change(interval(), { target: { value: '30' } })
       fireEvent.click(save())
+      await settle()
 
-      await eventually(() =>
-        expect(document.body.textContent).toMatch(/next scout due in 20 days/i),
-      )
-      // Was an unwrapped synchronous assertion riding the waitFor above.
-      await eventually(() => expect(interval()).toHaveValue(30))
+      expect(document.body.textContent).toMatch(/next scout due in 20 days/i)
+      expect(interval()).toHaveValue(30)
     },
     TEST_TIMEOUT_MS,
   )
@@ -292,18 +343,15 @@ describe('the cadence control (#50)', () => {
     'refuses to save an interval outside the served bounds, and says why',
     async () => {
       render(<App />)
-      await eventually(() => expect(interval()).toHaveValue(7))
+      await settle()
+      expect(interval()).toHaveValue(7)
 
       fireEvent.change(interval(), { target: { value: '500' } })
+      await settle()
 
-      await eventually(() => expect(save()).toBeDisabled())
-      await eventually(() =>
-        expect(document.body.textContent).toMatch(/choose between 1 and 90 days/i),
-      )
-      // Was an unwrapped synchronous assertion riding the waitFor above —
-      // this is the exact test #140's own repro caught failing on its
-      // ALREADY-widened 3000ms waitFor.
-      await eventually(() => expect(setCadence).not.toHaveBeenCalled())
+      expect(save()).toBeDisabled()
+      expect(document.body.textContent).toMatch(/choose between 1 and 90 days/i)
+      expect(setCadence).not.toHaveBeenCalled()
     },
     TEST_TIMEOUT_MS,
   )
@@ -312,10 +360,10 @@ describe('the cadence control (#50)', () => {
     'does not write when nothing has changed',
     async () => {
       render(<App />)
+      await settle()
 
-      await eventually(() => expect(interval()).toHaveValue(7))
-      // Was an unwrapped synchronous assertion riding the waitFor above.
-      await eventually(() => expect(save()).toBeDisabled())
+      expect(interval()).toHaveValue(7)
+      expect(save()).toBeDisabled()
     },
     TEST_TIMEOUT_MS,
   )
@@ -329,12 +377,14 @@ describe('the cadence control (#50)', () => {
       // the value is remembered so switching back on does not reset them.
       setCadence.mockResolvedValue(cadenceFixture({ enabled: false, next_due_at: null }))
       render(<App />)
-      await eventually(() => expect(toggle()).toBeChecked())
+      await settle()
+      expect(toggle()).toBeChecked()
 
       fireEvent.click(toggle())
       fireEvent.click(save())
+      await settle()
 
-      await eventually(() => expect(setCadence).toHaveBeenCalledWith(false, 7))
+      expect(setCadence).toHaveBeenCalledWith(false, 7)
     },
     TEST_TIMEOUT_MS,
   )
@@ -351,12 +401,10 @@ describe('the cadence control (#50)', () => {
       listRuns.mockResolvedValue([run({ created_at: new Date(Date.now() - 400 * DAY_MS).toISOString() })])
 
       render(<App />)
+      await settle()
 
-      await eventually(() => expect(toggle()).not.toBeChecked())
-      // Was an unwrapped synchronous assertion riding the waitFor above —
-      // named as a flagged-but-unconfirmed instance in #140's body;
-      // confirmed here as the same shape as the others in this file.
-      await eventually(() => expect(startRun).not.toHaveBeenCalled())
+      expect(toggle()).not.toBeChecked()
+      expect(startRun).not.toHaveBeenCalled()
     },
     TEST_TIMEOUT_MS,
   )
@@ -372,8 +420,9 @@ describe('the cadence control (#50)', () => {
       startRun.mockResolvedValue(run({ run_id: 'auto1', in_flight: true }))
 
       render(<App />)
+      await settle()
 
-      await eventually(() => expect(startRun).toHaveBeenCalledTimes(1))
+      expect(startRun).toHaveBeenCalledTimes(1)
     },
     TEST_TIMEOUT_MS,
   )
@@ -385,12 +434,14 @@ describe('the cadence control (#50)', () => {
     async () => {
       setCadence.mockRejectedValue(new Error('Core said no'))
       render(<App />)
-      await eventually(() => expect(interval()).toHaveValue(7))
+      await settle()
+      expect(interval()).toHaveValue(7)
 
       fireEvent.change(interval(), { target: { value: '14' } })
       fireEvent.click(save())
+      await settle()
 
-      await eventually(() => expect(document.body.textContent).toMatch(/core said no/i))
+      expect(document.body.textContent).toMatch(/core said no/i)
     },
     TEST_TIMEOUT_MS,
   )
