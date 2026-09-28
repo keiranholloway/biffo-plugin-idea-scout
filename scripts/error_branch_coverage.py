@@ -204,7 +204,57 @@ class Branch:
     label: str
 
     def key(self) -> str:
-        return f"{self.path}:{self.kind}:{self.label}"
+        """The ratchet's identity for this branch. Must not collide (#2026).
+
+        Two textually-identical branches in one file — two different
+        functions each with a bare `except ValueError:` — are common: the
+        vocabulary of exception type names is finite and heavily reused, and
+        `label` for a `fallback` is truncated to 50 chars on top of that. A
+        key of `path:kind:label` alone collapses both onto one entry, so a
+        second, genuinely new, never-executed branch sharing a label with an
+        already-baselined one in the same file was silently absorbed into
+        that entry: it was printed (the analyser saw it) but never marked
+        NEW, and `--check` exited 0 over an unverified branch nobody had
+        looked at. Confirmed live: a second unexecuted `except ValueError`
+        added in the same file as an already-baselined one produced no NEW
+        marker and exit 0, while a distinctly-labeled addition in the same
+        run was correctly flagged — isolating the cause to the missing
+        position, not to anything else about the change.
+
+        `line` is included to close that gap, chosen deliberately over an
+        occurrence ordinal among same-labeled branches in the file (e.g.
+        "2nd `except ValueError` in this file"). Both carry a cost and
+        neither is free:
+
+        - **Line number** (chosen): a new branch cannot collide with an
+          existing key at all, short of landing on the exact line number a
+          deleted branch used to occupy — vanishingly unlikely, since that
+          requires a line-count-preserving edit that puts an unrelated new
+          branch at that exact spot. The cost is churn: an unrelated edit
+          that shifts a baselined branch down a few lines (an import added
+          above it, a docstring reflowed) makes its key change too, so it
+          reads as NEW and the gate cries wolf until `--write` re-accepts
+          it. `unexecuted()`'s own docstring already documents that this
+          script's line-based coverage join is shift-sensitive in exactly
+          this way, so this does not introduce a new fragility, only extends
+          an existing one from the coverage join into the baseline key.
+        - **Occurrence ordinal** (rejected): stable under a line shift
+          elsewhere in the file, but ambiguous under reordering. If a
+          baselined branch is removed and an unrelated new same-labeled
+          branch appears earlier in the file than a survivor, the survivor's
+          ordinal shifts onto the new branch's — reproducing this exact
+          issue by a different route, because an ordinal is still a
+          position, just a fragile relative one instead of a stable
+          absolute one.
+
+        Level reached: 3 (fail-closed) rather than 4 (detect-only) — a
+        distinct line number for every distinct AST node means a genuinely
+        new branch cannot be absorbed into an existing entry at all, not
+        merely flagged more often. Changing this format means every
+        instance's committed baseline must be regenerated; see the PR that
+        introduced this comment for the exact command.
+        """
+        return f"{self.path}:{self.line}:{self.kind}:{self.label}"
 
 
 def _handler_label(node: ast.ExceptHandler) -> str:
@@ -351,6 +401,46 @@ def load_baseline(baseline: Path) -> dict | None:
     return json.loads(baseline.read_text())
 
 
+def _legacy_key(k: str) -> str:
+    """A v2 `path:line:kind:label` key rendered in v1 `path:kind:label` form.
+
+    Migration shim for #2037: the trusted script that computes `keys` is
+    always fetched from the default branch, but `--baseline` is read from the
+    checkout under test, so a PR that changes `Branch.key()`'s shape (#2026,
+    #2031) is comparing keys the trusted script emits in the OLD format
+    against a baseline it wrote in the NEW format — every baselined branch
+    then reads NEW and the gate deadlocks structurally, not on anything wrong
+    in the PR's diff. Normalising each already-baselined key to its v1 form
+    lets a v1-computing script recognise a v2-shaped baseline entry.
+
+    `split(":", 2)` rather than a regex: `label` legitimately contains colons
+    (a bare handler's label is `except:`) while `kind` is never numeric and a
+    repo-relative `path` carries no colon, so "is the second field all
+    digits" is an unambiguous discriminator between the two shapes. A v1 key
+    is returned unchanged (its second field is `except`/`fallback`, never a
+    digit), so this is a no-op for every baseline still in v1 form.
+
+    Retire this — and the union in `main()` that calls it — once every
+    inheriting repo's baseline has been regenerated as v2. Kept only for the
+    duration of that migration: while it is in effect, a genuinely new v2
+    branch that collides on `path:kind:label` with an already-baselined
+    branch at a different line is absorbed as "known" rather than flagged —
+    reintroducing #2026's collision bug for exactly as long as this shim
+    lives.
+
+    EXPIRY: tracked by keiranholloway/biffo-template#2056 (the original
+    tracking issue, #2037, was auto-closed by the shim's own landing PR
+    before Milestones 2/3 were done — #2056 is its replacement). A repo
+    still carrying this shim after that issue closes is exposed to the
+    collision above and should be flagged by any doctor/sweep check that
+    reads this docstring — grep for "EXPIRY" in this function.
+    """
+    parts = k.split(":", 2)
+    if len(parts) == 3 and parts[1].isdigit():
+        return f"{parts[0]}:{parts[2]}"
+    return k
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--write", action="store_true", help="record the current set as baseline")
@@ -418,16 +508,47 @@ def main() -> int:
             file=sys.stderr,
         )
 
+    reports = [json.loads(p.read_text()) for p in present]
+    coverage = merge_coverage(reports)
+    file_count = len(coverage.get("files", {}))
+
     # Restated in every summary line below (not just the warning above) so the
     # denominator survives even if the warning scrolls past unread: a reader
     # who sees only the final line still learns how much of the requested
-    # picture this result is actually over.
-    coverage_note = f"{len(present)}/{len(coverage_paths)} coverage artefact(s)"
+    # picture this result is actually over. The file count is part of that
+    # denominator, not just the artefact count — see the fail-closed check
+    # immediately below for why (#1657).
+    coverage_note = (
+        f"{len(present)}/{len(coverage_paths)} coverage artefact(s), {file_count} file(s)"
+    )
     if absent:
         coverage_note += f" — MISSING: {', '.join(str(p) for p in absent)}"
 
-    reports = [json.loads(p.read_text()) for p in present]
-    coverage = merge_coverage(reports)
+    if file_count == 0:
+        # #1657: an artefact can be present and valid JSON while still
+        # describing NOTHING — `{"files": {}}`, or `files` absent entirely.
+        # That reads identically to "everything is covered" to the logic
+        # below (found == [], keys == [], nothing NEW), so --check would
+        # exit 0 over a report that examined zero files: a fail-open in the
+        # gate that exists specifically to catch fail-opens. Every other
+        # soft-open path here (no baseline, a missing --coverage file)
+        # announces itself loudly and still proceeds; this one cannot
+        # proceed at all, because there is no denominator left to reason
+        # over. Fail closed rather than fail open: refuse both --write
+        # (never baseline a measurement of nothing) and --check (never let
+        # a growth check pass over nothing to check).
+        print(
+            f"::error::error-branch coverage: {coverage_note} — the merged "
+            "coverage report describes 0 files. Refusing to treat that as "
+            "clean: a report with nothing in it is not evidence the tree is "
+            "covered, it is evidence nothing was measured (a "
+            "[tool.coverage.run] source pointed at the wrong tree, a "
+            "truncated or hand-staged artefact, a coverage run against an "
+            "empty package). Fix the coverage run and try again.",
+            file=sys.stderr,
+        )
+        return 2
+
     found = unexecuted(coverage, source_root)
     keys = sorted({b.key() for b in found})
 
@@ -436,7 +557,7 @@ def main() -> int:
         baseline_path.write_text(
             json.dumps({"total": len(keys), "branches": keys}, indent=2) + "\n",
         )
-        print(f"baseline written: {len(keys)} unexecuted error branches")
+        print(f"baseline written: {len(keys)} unexecuted error branches ({coverage_note})")
         return 0
 
     baseline = load_baseline(baseline_path)
@@ -450,7 +571,15 @@ def main() -> int:
         print(f"unexecuted error branches: {len(keys)}  (no baseline yet; {coverage_note})")
         return 0
 
-    known = set(baseline.get("branches", []))
+    # `keys` (above) comes from THIS script, always fetched from the trusted
+    # default branch. `recorded` comes from --baseline, read from the
+    # checkout under test — which may already be in the newer key format
+    # this script does not compute yet. Widen membership with each
+    # baselined key's legacy-normalised form so a v1-computing script still
+    # recognises a v2-shaped baseline entry (#2037 migration shim; see
+    # `_legacy_key`). `keys` itself is left untouched.
+    recorded = set(baseline.get("branches", []))
+    known = recorded | {_legacy_key(k) for k in recorded}
     new = [k for k in keys if k not in known]
 
     print(
