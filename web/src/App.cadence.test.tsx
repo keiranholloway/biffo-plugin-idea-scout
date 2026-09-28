@@ -136,7 +136,14 @@ describe('the cadence control (#50)', () => {
   it('shows when the next automatic scout falls due', async () => {
     render(<App />)
 
-    await waitFor(() => expect(document.body.textContent).toMatch(/next scout due in 3 days/i))
+    // Default waitFor timeout (1000ms) is tight under CI resource contention
+    // for a text-content assertion that depends on an async render settling
+    // (#136) — raised explicitly rather than relying on the default budget.
+    // Kept below Vitest's default 5000ms per-test timeout, which is the outer
+    // deadline and would otherwise fire first and mask this one.
+    await waitFor(() => expect(document.body.textContent).toMatch(/next scout due in 3 days/i), {
+      timeout: 3000,
+    })
   })
 
   it('says so plainly when cadence is off, rather than showing nothing', async () => {
@@ -188,7 +195,14 @@ describe('the cadence control (#50)', () => {
     fireEvent.change(interval(), { target: { value: '30' } })
     fireEvent.click(save())
 
-    await waitFor(() => expect(document.body.textContent).toMatch(/next scout due in 20 days/i))
+    // Default waitFor timeout (1000ms) is tight under CI resource contention
+    // for a text-content assertion that depends on an async render settling
+    // (#136) — raised explicitly rather than relying on the default budget.
+    // Kept below Vitest's default 5000ms per-test timeout, which is the outer
+    // deadline and would otherwise fire first and mask this one.
+    await waitFor(() => expect(document.body.textContent).toMatch(/next scout due in 20 days/i), {
+      timeout: 3000,
+    })
     expect(interval()).toHaveValue(30)
   })
 
@@ -199,7 +213,15 @@ describe('the cadence control (#50)', () => {
     fireEvent.change(interval(), { target: { value: '500' } })
 
     await waitFor(() => expect(save()).toBeDisabled())
-    expect(document.body.textContent).toMatch(/choose between 1 and 90 days/i)
+
+    // Default waitFor timeout (1000ms) is tight under CI resource contention
+    // for a text-content assertion that depends on an async render settling
+    // (#136) — raised explicitly rather than relying on the default budget.
+    // Kept below Vitest's default 5000ms per-test timeout, which is the outer
+    // deadline and would otherwise fire first and mask this one.
+    await waitFor(() => expect(document.body.textContent).toMatch(/choose between 1 and 90 days/i), {
+      timeout: 3000,
+    })
     expect(setCadence).not.toHaveBeenCalled()
   })
 
@@ -222,7 +244,12 @@ describe('the cadence control (#50)', () => {
     fireEvent.click(toggle())
     fireEvent.click(save())
 
-    await waitFor(() => expect(setCadence).toHaveBeenCalledWith(false, 7))
+    // Default waitFor timeout (1000ms) is tight under CI resource contention
+    // for a text-content assertion that depends on an async render settling
+    // (#136) — raised explicitly rather than relying on the default budget.
+    // Kept below Vitest's default 5000ms per-test timeout, which is the outer
+    // deadline and would otherwise fire first and mask this one.
+    await waitFor(() => expect(setCadence).toHaveBeenCalledWith(false, 7), { timeout: 3000 })
   })
 
   it('OFF suppresses the auto-start, it does not merely hide the control', async () => {
@@ -262,6 +289,8 @@ describe('the cadence control (#50)', () => {
     fireEvent.change(interval(), { target: { value: '14' } })
     fireEvent.click(save())
 
-    await waitFor(() => expect(document.body.textContent).toMatch(/core said no/i))
+    // Same class of timing margin as the due-date assertion above (#136),
+    // kept below Vitest's default 5000ms per-test timeout for the same reason.
+    await waitFor(() => expect(document.body.textContent).toMatch(/core said no/i), { timeout: 3000 })
   })
 })
