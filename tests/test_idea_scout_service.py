@@ -1085,11 +1085,5 @@ async def test_listing_business_models_returns_only_active_ones():
 def test_tool_call_arguments_survives_deeply_nested_json() -> None:
     from idea_scout.service import _tool_call_arguments
 
-    messages = [
-        {
-            "tool_calls": [
-                {"function": {"name": "submit", "arguments": "[" * 100_000}}
-            ]
-        }
-    ]
+    messages = [{"tool_calls": [{"function": {"name": "submit", "arguments": "[" * 100_000}}]}]
     assert _tool_call_arguments(messages, "submit") is None
