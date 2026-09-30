@@ -72,7 +72,11 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-groups
-      - run: uv run pytest --cov --cov-report=xml
+      - run: uv run pytest --cov --cov-report=xml --cov-report=json
+      # Ratchet against docs/practices/error-branch-baseline.json: pre-existing
+      # unexecuted error branches are baselined; only new ones fail.
+      - name: Error-branch coverage
+        run: uv run python scripts/error_branch_coverage.py --check
       - uses: codecov/codecov-action@v5
         if: always()
         with:
