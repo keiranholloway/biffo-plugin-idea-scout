@@ -65,3 +65,17 @@ def test_the_seeded_prompt_is_exactly_the_built_in_default():
 
 def test_every_seeded_row_is_active():
     assert all(row["active"] for row in payloads())
+
+
+# ── Model catalog ────────────────────────────────────────────────────────────
+
+
+def test_the_default_research_model_is_seeded_usable_and_default():
+    """Without this row `start_run` 422s on the default research model."""
+    from idea_scout.definitions import DEFAULT_RESEARCH_MODEL
+
+    models = load_script("seed_model_catalog").MODELS
+    rows = [m for m in models if m["model_id"] == DEFAULT_RESEARCH_MODEL]
+    assert len(rows) == 1
+    assert rows[0]["active"] and rows[0]["web_capable"] and rows[0]["is_default"]
+    assert len({m["model_id"] for m in models}) == len(models)
