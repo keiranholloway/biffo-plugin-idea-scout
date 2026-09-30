@@ -1,0 +1,20 @@
+{
+  "total": 15,
+  "branches": [
+    "scripts/error_branch_coverage.py:181:except:except ValueError",
+    "scripts/error_branch_coverage.py:262:fallback:if node.type is None -> 'except:'",
+    "scripts/error_branch_coverage.py:337:except:except SyntaxError",
+    "scripts/error_branch_coverage.py:400:fallback:if not baseline.is_file() -> None",
+    "scripts/seed_agent_config.py:85:except:except urllib.error.HTTPError",
+    "scripts/seed_build_types.py:114:except:except urllib.error.HTTPError",
+    "scripts/seed_build_types.py:127:except:except urllib.error.HTTPError",
+    "scripts/seed_business_models.py:170:except:except urllib.error.HTTPError",
+    "scripts/seed_business_models.py:183:except:except urllib.error.HTTPError",
+    "scripts/seed_fan_in_workflow.py:138:except:except urllib.error.HTTPError",
+    "scripts/seed_fan_in_workflow.py:157:except:except urllib.error.HTTPError",
+    "src/idea_scout/novelty.py:100:fallback:if not set_a or not set_b -> 0.0",
+    "src/idea_scout/novelty.py:136:fallback:if not self.candidates -> 1.0",
+    "src/idea_scout/service.py:184:except:except ValidationError",
+    "src/idea_scout/service.py:732:fallback:if not value -> None"
+  ]
+}

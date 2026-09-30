@@ -148,7 +148,7 @@ asyncio_mode = "auto"
 pythonpath = ["src", "tests"]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["src", "scripts"]
 omit = ["*/tests/*"]
 
 # python-semantic-release config for release.yml. This repo does not use
