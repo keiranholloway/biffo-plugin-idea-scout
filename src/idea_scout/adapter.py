@@ -95,7 +95,7 @@ def _load_json(value: Any, *, default: Any) -> Any:
     if isinstance(value, str):
         try:
             return json.loads(value)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             # A column that isn't valid JSON is corrupt data, not a reason to
             # 500 a founder's whole run listing — degrade to the default.
             return default
