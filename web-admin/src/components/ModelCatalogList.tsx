@@ -7,18 +7,36 @@ interface ModelCatalogListProps {
   onDelete: (entryId: string) => void
 }
 
+const EDITABLE_FIELDS = ['model_id', 'label', 'active', 'is_default', 'web_capable'] as const
+
 export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<ModelCatalogEntry>>({})
 
   function handleEdit(entry: ModelCatalogEntry) {
     setEditingId(entry.id)
-    setEditForm({ ...entry })
+    // Only editable fields: the fetched row also carries server-managed
+    // columns (tenant_id, created_at, updated_at) that Core rejects on update.
+    setEditForm({
+      model_id: entry.model_id,
+      label: entry.label,
+      active: entry.active,
+      is_default: entry.is_default,
+      web_capable: entry.web_capable,
+    })
   }
 
   function handleSaveEdit() {
     if (!editingId) return
-    onUpdate(editingId, editForm)
+    const original = entries.find((e) => e.id === editingId)
+    // Send only the fields that actually changed.
+    const changes: Partial<ModelCatalogEntry> = {}
+    for (const key of EDITABLE_FIELDS) {
+      if (editForm[key] !== undefined && editForm[key] !== original?.[key]) {
+        ;(changes as Record<string, unknown>)[key] = editForm[key]
+      }
+    }
+    if (Object.keys(changes).length > 0) onUpdate(editingId, changes)
     setEditingId(null)
     setEditForm({})
   }

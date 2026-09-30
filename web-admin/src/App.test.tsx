@@ -290,6 +290,28 @@ describe('Idea Scout admin panel', () => {
         expect(screen.getByText('Claude Opus (No Web)')).toBeTruthy()
       })
     })
+
+    it('sends only changed fields, never server-managed columns, on edit save', async () => {
+      const user = userEvent.setup()
+      listModelCatalog.mockResolvedValue([
+        {
+          ...MODEL_WEB_CAPABLE,
+          tenant_id: 't1',
+          created_at: '2026-01-01',
+          updated_at: '2026-01-02',
+        },
+      ])
+      render(<App />)
+
+      await user.click(await screen.findByRole('button', { name: /^Models$/i }))
+      await user.click(await screen.findByRole('button', { name: /^Edit$/i }))
+      await user.click(screen.getByLabelText('Active'))
+      await user.click(screen.getByRole('button', { name: /^Save$/i }))
+
+      await waitFor(() => {
+        expect(updateModelCatalogEntry).toHaveBeenCalledWith('model1', { active: false })
+      })
+    })
   })
 
   describe('Agents tab', () => {
