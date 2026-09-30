@@ -1080,3 +1080,10 @@ async def test_listing_business_models_returns_only_active_ones():
     )
     keys = [m.key for m in await _service(core).list_business_models()]
     assert keys == ["subscription"]
+
+
+def test_tool_call_arguments_survives_deeply_nested_json() -> None:
+    from idea_scout.service import _tool_call_arguments
+
+    messages = [{"tool_calls": [{"function": {"name": "submit", "arguments": "[" * 100_000}}]}]
+    assert _tool_call_arguments(messages, "submit") is None
