@@ -9,6 +9,7 @@ so most of these drive it by finishing scripted agent runs and then calling
 from __future__ import annotations
 
 import dataclasses
+
 import pytest
 from fakes import (
     FakeCoreGateway,
@@ -1121,9 +1122,7 @@ def test_parse_timestamp_returns_none_for_an_empty_value():
 
 def _research_models(core):
     return [
-        r["definition"]["model"]
-        for r in core.requested
-        if r["agent_name"] in RESEARCH_AGENT_NAMES
+        r["definition"]["model"] for r in core.requested if r["agent_name"] in RESEARCH_AGENT_NAMES
     ]
 
 
@@ -1143,9 +1142,7 @@ async def test_no_research_model_uses_the_catalog_default_not_the_agent_row():
 
 async def test_no_usable_catalog_default_falls_back_to_the_agent_row():
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = [
-        dataclasses.replace(e, is_default=False) for e in _MODEL_CATALOG
-    ]
+    core.model_catalog = [dataclasses.replace(e, is_default=False) for e in _MODEL_CATALOG]
     _seed_core(core)
     for cfg in core.configs.values():
         cfg["model"] = "row-model"
@@ -1162,9 +1159,15 @@ async def test_replay_of_a_withdrawn_model_runs_on_the_catalog_default():
     svc = _service(core)
     # Remembered model m2 was withdrawn: last-used resolves to None, replay sends no model.
     await core.create_run(
-        owner_sub=OWNER, build_type="micro-saas", complexity=3, profile_snapshot={},
-        preferences=[], research_run_ids=[], chain_id="c",
-        business_model=None, research_model="anthropic/claude-opus:online",
+        owner_sub=OWNER,
+        build_type="micro-saas",
+        complexity=3,
+        profile_snapshot={},
+        preferences=[],
+        research_run_ids=[],
+        chain_id="c",
+        business_model=None,
+        research_model="anthropic/claude-opus:online",
     )
     assert await svc.last_used_model_id(owner_sub=OWNER) is None
     core.requested.clear()
