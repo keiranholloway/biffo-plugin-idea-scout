@@ -656,3 +656,33 @@ def test_a_failed_startup_seed_logs_cores_actual_response(monkeypatch):
     logged = "\n".join(record.getMessage() for record in records)
     assert detail in logged, logged
     assert "may be unavailable" not in logged, logged
+
+
+def test_last_used_returns_catalog_id_and_replay_validates(client, core):
+    from idea_scout.models import ModelCatalogEntry
+
+    core.model_catalog = [
+        ModelCatalogEntry(
+            id="m1", model_id="openai/gpt-4:online", label="GPT-4",
+            active=True, is_default=True, web_capable=True,
+        ),
+    ]
+    assert _start(client, research_model="m1").status_code == 201
+    last = client.get("/models/last-used").json()["research_model"]
+    assert last == "m1"
+    assert _start(client, research_model=last).status_code == 201
+
+
+def test_withdrawn_last_used_model_falls_back_to_default(client, core):
+    from idea_scout.models import ModelCatalogEntry
+
+    entry = ModelCatalogEntry(
+        id="m1", model_id="openai/gpt-4:online", label="GPT-4",
+        active=True, is_default=True, web_capable=True,
+    )
+    core.model_catalog = [entry]
+    assert _start(client, research_model="m1").status_code == 201
+    core.model_catalog = []  # withdrawn
+    last = client.get("/models/last-used").json()["research_model"]
+    assert last is None
+    assert _start(client).status_code == 201
