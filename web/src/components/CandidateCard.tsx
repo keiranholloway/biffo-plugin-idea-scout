@@ -120,7 +120,9 @@ export function CandidateCard({ candidate }: { candidate: Candidate }) {
         </details>
       )}
 
-      <a className="candidate-promote" href={pressureTestUrl(candidate.pitch)}>
+      {/* target _top: Idea Scout runs inside the dashboard's iframe, so open the
+          Ideation Engine's dashboard page in place of the whole page, not nested. */}
+      <a className="candidate-promote" href={pressureTestUrl(candidate.pitch)} target="_top">
         Pressure-test this →
       </a>
     </article>

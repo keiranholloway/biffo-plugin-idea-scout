@@ -232,7 +232,8 @@ export function createApi(getIdToken: () => string | null | Promise<string | nul
   }
 }
 
-/** Where a promoted candidate goes: the Ideation Engine, seeded with the pitch.
+/** Where a promoted candidate goes: the Ideation Engine's dashboard page, which
+ * hands ?seed to the embedded plugin, seeded with the pitch.
  *
  * Same-origin sibling app (ADR-0007), so a relative path keeps the shared Cognito
  * session with no second sign-in. The pitch is URL-encoded and bounded to the
@@ -243,5 +244,5 @@ export const IDEATION_SEED_LIMIT = 16_000
 
 export function pressureTestUrl(pitch: string): string {
   const seed = pitch.slice(0, IDEATION_SEED_LIMIT)
-  return `/ideation/?seed=${encodeURIComponent(seed)}`
+  return `/dashboard/ideation-engine/?seed=${encodeURIComponent(seed)}`
 }

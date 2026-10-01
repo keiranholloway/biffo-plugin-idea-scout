@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { createApi, IDEATION_SEED_LIMIT, pressureTestUrl } from './api'
 
 describe('pressureTestUrl', () => {
-  it('points at the Ideation Engine on the same origin', () => {
+  it("points at the Ideation Engine's dashboard page on the same origin", () => {
     // Relative, not absolute: same-origin keeps the shared Cognito session
-    // (ADR-0007) with no second sign-in.
-    expect(pressureTestUrl('an idea')).toMatch(/^\/ideation\/\?seed=/)
+    // (ADR-0007) with no second sign-in. The dashboard page hands ?seed to the
+    // embedded plugin. The old /ideation/ path was retired on 2026-10-01 and now
+    // serves the portal's home page.
+    expect(pressureTestUrl('an idea')).toMatch(/^\/dashboard\/ideation-engine\/\?seed=/)
   })
 
   it('encodes a pitch that would otherwise break the query string', () => {

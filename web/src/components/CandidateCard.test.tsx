@@ -47,8 +47,11 @@ describe('CandidateCard', () => {
 
     const link = screen.getByRole('link', { name: /Pressure-test this/ })
     const href = link.getAttribute('href') ?? ''
-    expect(href).toMatch(/^\/ideation\/\?seed=/)
+    expect(href).toMatch(/^\/dashboard\/ideation-engine\/\?seed=/)
     expect(new URL(href, 'https://x.test').searchParams.get('seed')).toBe(CANDIDATE.pitch)
+    // Idea Scout runs inside the dashboard's iframe: the link must replace the whole
+    // page, or the Ideation Engine opens nested inside Idea Scout's frame.
+    expect(link).toHaveAttribute('target', '_top')
   })
 
   it('renders without a scorecard rather than crashing', () => {
