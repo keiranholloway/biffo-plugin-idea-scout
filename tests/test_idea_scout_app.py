@@ -663,8 +663,12 @@ def test_last_used_returns_catalog_id_and_replay_validates(client, core):
 
     core.model_catalog = [
         ModelCatalogEntry(
-            id="m1", model_id="openai/gpt-4:online", label="GPT-4",
-            active=True, is_default=True, web_capable=True,
+            id="m1",
+            model_id="openai/gpt-4:online",
+            label="GPT-4",
+            active=True,
+            is_default=True,
+            web_capable=True,
         ),
     ]
     assert _start(client, research_model="m1").status_code == 201
@@ -677,8 +681,12 @@ def test_withdrawn_last_used_model_falls_back_to_default(client, core):
     from idea_scout.models import ModelCatalogEntry
 
     entry = ModelCatalogEntry(
-        id="m1", model_id="openai/gpt-4:online", label="GPT-4",
-        active=True, is_default=True, web_capable=True,
+        id="m1",
+        model_id="openai/gpt-4:online",
+        label="GPT-4",
+        active=True,
+        is_default=True,
+        web_capable=True,
     )
     core.model_catalog = [entry]
     assert _start(client, research_model="m1").status_code == 201

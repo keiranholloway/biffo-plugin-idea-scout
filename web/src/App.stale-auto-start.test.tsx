@@ -73,7 +73,7 @@ const getFormOptions = vi.fn(() =>
     cadence: served,
   }),
 )
-const getLastUsedModel = vi.fn(() => Promise.resolve(null))
+const getLastUsedModel = vi.fn((): Promise<string | null> => Promise.resolve(null))
 
 vi.mock('./lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api')>()
