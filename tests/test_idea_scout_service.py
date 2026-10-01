@@ -1087,3 +1087,29 @@ def test_tool_call_arguments_survives_deeply_nested_json() -> None:
 
     messages = [{"tool_calls": [{"function": {"name": "submit", "arguments": "[" * 100_000}}]}]
     assert _tool_call_arguments(messages, "submit") is None
+
+
+async def test_last_used_model_id_is_none_when_no_run_remembers_a_model():
+    """No prior run (or none with a stored model) means nothing to replay."""
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)
+
+    assert await _service(core).last_used_model_id(owner_sub=OWNER) is None
+
+
+async def test_last_used_model_id_maps_the_stored_name_back_to_a_catalog_id():
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)
+    svc = _service(core)
+    await svc.start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3, research_model="m2")
+
+    assert await svc.last_used_model_id(owner_sub=OWNER) == "m2"
+
+
+def test_parse_timestamp_returns_none_for_an_empty_value():
+    from idea_scout.service import _parse_timestamp
+
+    assert _parse_timestamp(None) is None
+    assert _parse_timestamp("") is None

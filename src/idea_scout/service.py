@@ -249,6 +249,25 @@ class IdeaScoutService:
         # Only return models that are web-capable, since research agents require web search
         return [e for e in entries if e.web_capable]
 
+    async def last_used_model_id(self, *, owner_sub: str) -> str | None:
+        """The catalog entry ID of the model this founder most recently used.
+
+        Runs store the resolved model *name* (for display), but ``start_run``
+        validates catalog entry *IDs*, so the name is mapped back to a currently
+        selectable entry here. Works for old rows (which only ever held names).
+        Returns None when the remembered model has been withdrawn, deactivated or
+        is no longer web-capable, so a replay falls back to the default model
+        instead of being rejected.
+        """
+        runs = await self.list_runs(owner_sub=owner_sub)
+        remembered = next((r.research_model for r in runs if r.research_model), None)
+        if remembered is None:
+            return None
+        for entry in await self.list_model_catalog():
+            if entry.model_id == remembered or entry.id == remembered:
+                return entry.id
+        return None
+
     # ── Starting a run ───────────────────────────────────────────────────────
 
     async def start_run(

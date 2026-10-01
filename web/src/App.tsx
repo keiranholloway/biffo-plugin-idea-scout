@@ -153,7 +153,9 @@ export default function App() {
             mostRecent.build_type,
             mostRecent.complexity,
             mostRecent.preferences,
-            mostRecent.research_model ?? undefined,
+            // Runs store the model NAME; start_run validates catalog IDs, so
+            // replay the catalog ID from /models/last-used (null → default).
+            lastUsed ?? undefined,
             mostRecent.business_model ?? undefined,
             { ageDays: ageInDays(mostRecent.created_at) },
           );
