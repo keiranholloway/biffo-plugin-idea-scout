@@ -231,10 +231,12 @@ describe('auto-starting a stale scout on return (#50)', () => {
           build_type: 'marketplace',
           complexity: 5,
           preferences: ['recurring-revenue'],
-          research_model: 'model-7',
+          research_model: 'Some Model Name',
           business_model: 'subscription',
         }),
       ])
+      // The runs list holds the model NAME; the replay must send the catalog ID.
+      getLastUsedModel.mockResolvedValueOnce('model-7')
       startRun.mockResolvedValue(run({ run_id: 'auto1', in_flight: true }))
 
       render(<App />)
