@@ -90,3 +90,15 @@ def test_it_posts_to_the_path_core_actually_mounts():
     """
     assert _seed._DEFINITIONS_PATH == "/api/v1/orchestration/workflows"
     assert "/admin/" not in _seed._DEFINITIONS_PATH
+
+
+def test_it_offers_the_tool_extract_candidates_reads():
+    """Without output_tools the model answers in prose and every run ends with
+    MalformedCandidatesError."""
+    from idea_scout.definitions import CANDIDATES_TOOL_NAME, candidates_tool_schema
+
+    config = definition()["action_config"]
+
+    assert config["output_tools"] == [candidates_tool_schema()]
+    assert config["output_tools"][0]["function"]["name"] == CANDIDATES_TOOL_NAME
+    assert config["timeout_seconds"] == 240

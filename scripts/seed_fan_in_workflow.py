@@ -44,7 +44,10 @@ from idea_scout.definitions import (  # noqa: E402
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
     SYNTHESIS_MAX_TURNS,
+    candidates_tool_schema,
 )
+
+SYNTHESIS_TIMEOUT_SECONDS = 240
 
 WORKFLOW_NAME = "Idea Scout — synthesise once research completes"
 
@@ -95,6 +98,11 @@ def definition() -> dict:
             "expect_agents": ",".join(RESEARCH_AGENT_NAMES),
             "agent_name": SYNTHESIS_AGENT_NAME,
             "max_turns": SYNTHESIS_MAX_TURNS,
+            # Without this the model answers in prose and extract_candidates()
+            # raises MalformedCandidatesError: Core builds the synthesis run's
+            # definition_snapshot from action_config.
+            "output_tools": [candidates_tool_schema()],
+            "timeout_seconds": SYNTHESIS_TIMEOUT_SECONDS,
         },
         "enabled": True,
     }
