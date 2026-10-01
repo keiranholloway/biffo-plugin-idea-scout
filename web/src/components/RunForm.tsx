@@ -179,7 +179,11 @@ export function RunForm({
                 conflations already fixed in this plugin (#53, #69) — and here it
                 also blocked the run. Reachable whenever there is no last-used
                 model and no catalog entry flagged `is_default`. */}
-            <option value="">Use the built-in default</option>
+            <option value="">
+              {findDefaultModel(models)
+                ? `Use the default (${findDefaultModel(models)?.label})`
+                : 'Use the built-in default'}
+            </option>
             {models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.label}

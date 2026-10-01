@@ -8,6 +8,8 @@ so most of these drive it by finishing scripted agent runs and then calling
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 from fakes import (
     FakeCoreGateway,
@@ -908,7 +910,7 @@ async def test_founders_chosen_model_beats_the_admin_row():
 async def test_admin_row_model_beats_builtin_default():
     """When no founder choice, but admin config exists, use the admin model."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
+    core.model_catalog = []  # no usable catalog default: the agent row decides
     # Seed all agents first, then override the research agents' models
     _seed_core(core)
     for role in RESEARCH_AGENT_NAMES:
@@ -929,7 +931,7 @@ async def test_admin_row_model_beats_builtin_default():
 async def test_builtin_default_used_when_neither_founder_choice_nor_admin_row():
     """When no founder choice and no admin override, use the seeded default model."""
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
+    core.model_catalog = []  # no usable catalog default: the agent row decides
     _seed_core(core)  # Seeds with the service's default research model
 
     await _service(core).start_run(
@@ -1113,3 +1115,63 @@ def test_parse_timestamp_returns_none_for_an_empty_value():
 
     assert _parse_timestamp(None) is None
     assert _parse_timestamp("") is None
+
+
+# ── Catalog default for runs with no research_model ──────────────────────────
+
+
+def _research_models(core):
+    return [
+        r["definition"]["model"] for r in core.requested if r["agent_name"] in RESEARCH_AGENT_NAMES
+    ]
+
+
+async def test_no_research_model_uses_the_catalog_default_not_the_agent_row():
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    core.model_catalog = _MODEL_CATALOG
+    _seed_core(core)
+    for cfg in core.configs.values():
+        cfg["model"] = "anthropic/claude-sonnet-4:online"
+
+    await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+
+    models = _research_models(core)
+    assert len(models) == 3
+    assert set(models) == {"openai/gpt-4:online"}
+
+
+async def test_no_usable_catalog_default_falls_back_to_the_agent_row():
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    core.model_catalog = [dataclasses.replace(e, is_default=False) for e in _MODEL_CATALOG]
+    _seed_core(core)
+    for cfg in core.configs.values():
+        cfg["model"] = "row-model"
+
+    await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+
+    assert set(_research_models(core)) == {"row-model"}
+
+
+async def test_replay_of_a_withdrawn_model_runs_on_the_catalog_default():
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    core.model_catalog = [e for e in _MODEL_CATALOG if e.id != "m2"]
+    _seed_core(core)
+    svc = _service(core)
+    # Remembered model m2 was withdrawn: last-used resolves to None, replay sends no model.
+    await core.create_run(
+        owner_sub=OWNER,
+        build_type="micro-saas",
+        complexity=3,
+        profile_snapshot={},
+        preferences=[],
+        research_run_ids=[],
+        chain_id="c",
+        business_model=None,
+        research_model="anthropic/claude-opus:online",
+    )
+    assert await svc.last_used_model_id(owner_sub=OWNER) is None
+    core.requested.clear()
+
+    await svc.start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+
+    assert set(_research_models(core)) == {"openai/gpt-4:online"}

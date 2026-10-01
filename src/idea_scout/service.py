@@ -333,6 +333,19 @@ class IdeaScoutService:
                 raise UnknownModelError(research_model)
             chosen_model_slug = model_entry.model_id
 
+        # No model chosen: the catalog's active, web-capable default decides, so
+        # withdrawing or changing it takes effect. The stored agent row is only
+        # the fallback when the catalog has no usable default. The run still
+        # records research_model as None (nothing was *chosen*).
+        research_model_slug = chosen_model_slug
+        if research_model_slug is None:
+            catalog = await self._core.list_model_catalog(active_only=True)
+            default_entry = next(
+                (e for e in catalog if e.is_default and e.active and e.web_capable), None
+            )
+            if default_entry is not None:
+                research_model_slug = default_entry.model_id
+
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
         previously_suggested = await self._previously_suggested(owner_sub=owner_sub)
         brief = self._build_brief(
@@ -353,7 +366,7 @@ class IdeaScoutService:
         research_run_ids = []
         for agent_name in RESEARCH_AGENT_NAMES:
             instructions, model = await self._resolve_agent(
-                agent_name, self._research_model, chosen_model_slug=chosen_model_slug
+                agent_name, self._research_model, chosen_model_slug=research_model_slug
             )
             run_id = await self._core.request_agent_run(
                 agent_name=agent_name,
