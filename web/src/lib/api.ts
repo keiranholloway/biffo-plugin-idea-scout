@@ -243,6 +243,11 @@ export function createApi(getIdToken: () => string | null | Promise<string | nul
 export const IDEATION_SEED_LIMIT = 16_000
 
 export function pressureTestUrl(pitch: string): string {
-  const seed = pitch.slice(0, IDEATION_SEED_LIMIT)
+  let seed = pitch.slice(0, IDEATION_SEED_LIMIT)
+  // Don't leave half a surrogate pair at the cut: encodeURIComponent throws on it.
+  if (pitch.length > IDEATION_SEED_LIMIT) {
+    const last = seed.charCodeAt(seed.length - 1)
+    if (last >= 0xd800 && last <= 0xdbff) seed = seed.slice(0, -1)
+  }
   return `/dashboard/ideation-engine/?seed=${encodeURIComponent(seed)}`
 }

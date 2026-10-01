@@ -3,6 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { createApi, IDEATION_SEED_LIMIT, pressureTestUrl } from './api'
 
 describe('pressureTestUrl', () => {
+  it('does not throw when the cut splits a surrogate pair', () => {
+    const url = pressureTestUrl('a'.repeat(IDEATION_SEED_LIMIT - 1) + '😀')
+    expect(decodeURIComponent(url.split('seed=')[1])).toBe('a'.repeat(IDEATION_SEED_LIMIT - 1))
+  })
+
   it("points at the Ideation Engine's dashboard page on the same origin", () => {
     // Relative, not absolute: same-origin keeps the shared Cognito session
     // (ADR-0007) with no second sign-in. The dashboard page hands ?seed to the
