@@ -79,6 +79,20 @@ wheels = [
 ]
 
 [[package]]
+name = "biffo-plugin-host"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "biffo-plugin-sdk", extra = ["user-serving"] },
+    { name = "mangum" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/b4/7711bc586225a3b28d59140acfb36e1bd3978607bf48f9481664739d6ef6/biffo_plugin_host-0.1.0.tar.gz", hash = "sha256:9109f6bba68c6a3d90a3b1dd0bdf424177573b9aa26d8b4a0fa4cd9f2400b658", size = 53807, upload-time = "2026-09-08T16:05:58.666Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/63/52665b11d5ce58d58742fa0b03c81d5a8b7d736490ec0cbb3f93a725902c/biffo_plugin_host-0.1.0-py3-none-any.whl", hash = "sha256:49b9d21300a2989e0a1967575f019265d5b7b0167c4bb10d97282a6aa7280891", size = 28742, upload-time = "2026-09-08T16:05:57.341Z" },
+]
+
+[[package]]
 name = "biffo-plugin-idea-scout"
 version = "0.1.0"
 source = { editable = "." }
@@ -90,6 +104,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "biffo-plugin-host" },
     { name = "jsonschema" },
     { name = "pip-audit" },
     { name = "pyright" },
@@ -108,6 +123,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "biffo-plugin-host", specifier = "~=0.1.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "pip-audit", specifier = ">=2.7.3" },
     { name = "pyright", specifier = ">=1.1.0" },
