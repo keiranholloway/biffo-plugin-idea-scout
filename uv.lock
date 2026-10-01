@@ -79,6 +79,20 @@ wheels = [
 ]
 
 [[package]]
+name = "biffo-plugin-host"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "biffo-plugin-sdk", extra = ["user-serving"] },
+    { name = "mangum" },
+    { name = "starlette" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/da/b4/7711bc586225a3b28d59140acfb36e1bd3978607bf48f9481664739d6ef6/biffo_plugin_host-0.1.0.tar.gz", hash = "sha256:9109f6bba68c6a3d90a3b1dd0bdf424177573b9aa26d8b4a0fa4cd9f2400b658", size = 53807, upload-time = "2026-09-08T16:05:58.666Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/63/52665b11d5ce58d58742fa0b03c81d5a8b7d736490ec0cbb3f93a725902c/biffo_plugin_host-0.1.0-py3-none-any.whl", hash = "sha256:49b9d21300a2989e0a1967575f019265d5b7b0167c4bb10d97282a6aa7280891", size = 28742, upload-time = "2026-09-08T16:05:57.341Z" },
+]
+
+[[package]]
 name = "biffo-plugin-idea-scout"
 version = "0.1.0"
 source = { editable = "." }
@@ -90,6 +104,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "biffo-plugin-host" },
     { name = "jsonschema" },
     { name = "pip-audit" },
     { name = "pyright" },
@@ -102,12 +117,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aws-lambda-powertools", extras = ["tracer"], specifier = ">=3.4.0" },
-    { name = "biffo-plugin-sdk", extras = ["sigv4", "user-serving"], specifier = ">=1.3,<2.0" },
+    { name = "biffo-plugin-sdk", extras = ["sigv4", "user-serving"], specifier = ">=1.6,<2.0" },
     { name = "httpx", specifier = ">=0.28.1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "biffo-plugin-host", specifier = "~=0.1.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "pip-audit", specifier = ">=2.7.3" },
     { name = "pyright", specifier = ">=1.1.0" },
@@ -119,16 +135,16 @@ dev = [
 
 [[package]]
 name = "biffo-plugin-sdk"
-version = "1.3.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aws-lambda-powertools" },
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d9/79/5848a02ef400ca2125af0c741bd25ac38c454fdba9b0d56335895916f6d6/biffo_plugin_sdk-1.3.0.tar.gz", hash = "sha256:e3aee7942966cc9a186474aa9fcf5c5aff5e67420862bb3af86049bcb94e6757", size = 46988, upload-time = "2026-08-11T15:57:52.943Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1c/f8/6026b2429de46a6d0e10a9e654751b98425d2da3adc82b603c8cabf6b5b4/biffo_plugin_sdk-1.6.0.tar.gz", hash = "sha256:ccd6bde49b43850e7c209dd2be3b6691faf266521d653666de1a29ae94fbbba1", size = 81738, upload-time = "2026-09-23T07:37:03.333Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/6f/a314f33e6d6b4121eb73e66ee466e275357cba9e0fafe82cfb584ba5010f/biffo_plugin_sdk-1.3.0-py3-none-any.whl", hash = "sha256:c5c46493b364d70c9098643cf6c045813330dcc3e46ba9969ff2a12b225c5338", size = 28695, upload-time = "2026-08-11T15:57:51.758Z" },
+    { url = "https://files.pythonhosted.org/packages/e1/96/0201231ee1dcd5d0c79153d08f9abbbcdf2002ef131f2a4010bbe3da36f9/biffo_plugin_sdk-1.6.0-py3-none-any.whl", hash = "sha256:c3bb1925bb883dde186657a112ce5611b42dc530f643bdb20b32a0ca83d3965a", size = 52884, upload-time = "2026-09-23T07:37:01.851Z" },
 ]
 
 [package.optional-dependencies]
