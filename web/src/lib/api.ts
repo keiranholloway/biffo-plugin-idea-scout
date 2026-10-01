@@ -249,5 +249,10 @@ export function pressureTestUrl(pitch: string): string {
     const last = seed.charCodeAt(seed.length - 1)
     if (last >= 0xd800 && last <= 0xdbff) seed = seed.slice(0, -1)
   }
+  // Replace any other unpaired surrogate (already present in the pitch) with U+FFFD.
+  seed = seed.replace(
+    /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g,
+    '\ufffd',
+  )
   return `/dashboard/ideation-engine/?seed=${encodeURIComponent(seed)}`
 }
