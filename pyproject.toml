@@ -86,7 +86,7 @@ target-version = "py313"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "B", "S", "UP", "ANN"]
+select = ["E", "F", "I", "N", "W", "B", "S", "UP", "ANN", "TID251"]
 ignore = [
   "S101", # allow assert in tests
   # ANN401 (no `Any` in annotations) fights the one place `Any` is the honest
@@ -119,6 +119,9 @@ extend-immutable-calls = [
   "fastapi.File",
   "fastapi.Security",
 ]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"src".msg = "Import by package name (`from <pkg>.<mod> import x`), not through `src.`: it fails once the plugin is vendored into an instance."
 
 [tool.ruff.lint.per-file-ignores]
 # S101: assert is the normal pytest idiom. ANN: test functions don't need
