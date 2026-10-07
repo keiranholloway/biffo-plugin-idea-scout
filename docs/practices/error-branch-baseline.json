@@ -14,7 +14,7 @@
     "scripts/seed_fan_in_workflow.py:165:except:except urllib.error.HTTPError",
     "src/idea_scout/novelty.py:100:fallback:if not set_a or not set_b -> 0.0",
     "src/idea_scout/novelty.py:136:fallback:if not self.candidates -> 1.0",
-    "src/idea_scout/service.py:184:except:except ValidationError",
+    "src/idea_scout/service.py:197:except:except ValidationError",
     "src/idea_scout/service.py:732:fallback:if not value -> None"
   ]
 }

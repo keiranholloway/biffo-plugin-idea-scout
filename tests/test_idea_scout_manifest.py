@@ -31,7 +31,7 @@ _ROOT = MANIFEST_PATH.parent
 #   agent-run-request     -> requesting the research and synthesis runs
 #   agent-run-read        -> polling those runs for their terminal state
 #   run-output-tool       -> the findings/candidates structured-output tools
-#   owner-scoped-tables   -> /internal/owner-data/idea_scout_{runs,candidates,cadence}
+#   owner-scoped-tables   -> /internal/owner-data/idea_scout_{runs,candidates,cadence,prds}
 #   chat-agent-registry   -> the admin-editable prompt/model per agent role
 #   user-profile-read     -> /internal/user-profile/mine (biffo-platform #74)
 EXPECTED_CAPABILITIES = {
@@ -43,7 +43,12 @@ EXPECTED_CAPABILITIES = {
     "user-profile-read",
 }
 
-OWNER_SCOPED_TABLES = {"idea_scout_runs", "idea_scout_candidates", "idea_scout_cadence"}
+OWNER_SCOPED_TABLES = {
+    "idea_scout_runs",
+    "idea_scout_candidates",
+    "idea_scout_cadence",
+    "idea_scout_prds",
+}
 ADMIN_MANAGED_TABLES = {
     "idea_scout_build_types",
     "idea_scout_business_models",
@@ -200,6 +205,7 @@ def test_json_bearing_columns_are_text():
     json_columns = {
         "idea_scout_runs": {"research_run_ids", "profile_snapshot"},
         "idea_scout_candidates": {"scorecard", "sources"},
+        "idea_scout_prds": {"prd"},
     }
     for table in _raw()["tables"]:
         expected = json_columns.get(table["name"], set())
@@ -218,6 +224,13 @@ def test_columns_with_no_db_default_are_nullable():
         ("idea_scout_build_types", "active"),
         ("idea_scout_cadence", "enabled"),
         ("idea_scout_cadence", "cadence_days"),
+        ("idea_scout_prds", "status"),
+        ("idea_scout_prds", "thread_id"),
+        ("idea_scout_prds", "turn_count"),
+        ("idea_scout_prds", "compile_run_id"),
+        ("idea_scout_prds", "prd"),
+        ("idea_scout_prds", "failure_reason"),
+        ("idea_scout_prds", "deleted"),
     }
     for table in _raw()["tables"]:
         for column in table["columns"]:

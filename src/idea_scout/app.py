@@ -26,7 +26,7 @@ from typing import Any
 from biffo_plugin_sdk import ForwardedUser, require_group
 from fastapi import Depends, FastAPI
 from fastapi.requests import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from .adapter import CoreHttpError, CoreHttpGateway
@@ -44,11 +44,13 @@ from .definitions import (
 from .models import IN_FLIGHT_STATUSES
 from .service import (
     AgentConfigMissingError,
+    CandidateNotFoundError,
     IdeaScoutError,
     IdeaScoutService,
     InvalidCadenceError,
     InvalidComplexityError,
     MalformedCandidatesError,
+    PrdNotFoundError,
     RunNotFoundError,
     UnknownBuildTypeError,
     UnknownBusinessModelError,
@@ -127,6 +129,8 @@ async def _seed_agent_config() -> None:
 # carrying a reason the founder can read, not an HTTP error (see service.py).
 _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     RunNotFoundError: 404,
+    CandidateNotFoundError: 404,
+    PrdNotFoundError: 404,
     UnknownBuildTypeError: 422,
     UnknownBusinessModelError: 422,
     InvalidComplexityError: 422,
@@ -251,8 +255,9 @@ def _complexity_levels_json() -> list[dict[str, Any]]:
     ]
 
 
-def _candidate_json(candidate: Any) -> dict[str, Any]:
+def _candidate_json(candidate: Any, prd_status: str | None = None) -> dict[str, Any]:
     return {
+        "prd_status": prd_status,
         "id": candidate.id,
         "rank": candidate.rank,
         "title": candidate.title,
@@ -450,10 +455,53 @@ async def read_candidates(
     """
     candidates = await svc.get_candidates(owner_sub=founder.sub, run_id=run_id)
     run = await svc.get_run(owner_sub=founder.sub, run_id=run_id)
+    # PRD presence rides this payload: the UI's mount is pinned to 3 requests,
+    # so it cannot fetch it per candidate.
+    statuses = (
+        await svc.get_candidate_statuses(owner_sub=founder.sub, run_id=run_id) if candidates else {}
+    )
     return {
         **_run_state(run),
-        "candidates": [_candidate_json(c) for c in candidates],
+        "candidates": [_candidate_json(c, statuses.get(c.id)) for c in candidates],
     }
+
+
+@app.get("/candidates/{candidate_id}/prd")
+async def read_prd(
+    candidate_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """The candidate's stored PRD row; 404 if it has none (or is not yours)."""
+    prd = await svc.get_prd(owner_sub=founder.sub, candidate_id=candidate_id)
+    return {
+        "id": prd.id,
+        "candidate_id": prd.candidate_id,
+        "run_id": prd.run_id,
+        "status": prd.status,
+        "thread_id": prd.thread_id,
+        "turn_count": prd.turn_count,
+        "compile_run_id": prd.compile_run_id,
+        "prd": prd.prd,
+        "failure_reason": prd.failure_reason,
+    }
+
+
+@app.get("/candidates/{candidate_id}/prd.md")
+async def download_prd_markdown(
+    candidate_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> Response:
+    """The draft PRD as a markdown download; 404 until a draft exists."""
+    filename, markdown = await svc.get_prd_markdown(
+        owner_sub=founder.sub, candidate_id=candidate_id
+    )
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/cadence")

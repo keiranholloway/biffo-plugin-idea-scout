@@ -301,6 +301,103 @@
       }
     },
     {
+      "name": "idea_scout_prds",
+      "columns": [
+        {
+          "name": "owner_sub",
+          "type": "String(64)",
+          "nullable": false,
+          "description": "Cognito sub of the founder who owns this PRD — the owner-scope column (ADR-0017 §5). Reads and writes go through Core's owner-scoped service routes, never generic CRUD."
+        },
+        {
+          "name": "candidate_id",
+          "type": "String(36)",
+          "nullable": false,
+          "description": "The idea_scout_candidates row this PRD is for. A plain id, not a foreign key — plugin tables cannot declare FKs."
+        },
+        {
+          "name": "run_id",
+          "type": "String(36)",
+          "nullable": false,
+          "description": "The idea_scout_runs row that produced the candidate. Denormalised so a run's PRD statuses read in one list."
+        },
+        {
+          "name": "status",
+          "type": "String(32)",
+          "nullable": true,
+          "description": "interviewing | drafting | draft | final | failed. Nullable because the generated migration DDL does not apply declared defaults — the service sets it explicitly on create."
+        },
+        {
+          "name": "thread_id",
+          "type": "String(36)",
+          "nullable": true,
+          "description": "The chat thread of the PRD interview. Null until the interview starts."
+        },
+        {
+          "name": "turn_count",
+          "type": "Integer",
+          "nullable": true,
+          "description": "Number of founder turns taken in the interview. Nullable for the declared-default reason; treat NULL as 0."
+        },
+        {
+          "name": "compile_run_id",
+          "type": "String(36)",
+          "nullable": true,
+          "description": "The async agent run compiling the draft. Null until a draft is requested."
+        },
+        {
+          "name": "prd",
+          "type": "Text",
+          "nullable": true,
+          "description": "The structured PRD (shape: idea_scout.definitions.ProductRequirements) as a JSON string. Text, not JSON: Core's plugin-table type map has no JSON type. Null until a draft has been compiled."
+        },
+        {
+          "name": "failure_reason",
+          "type": "Text",
+          "nullable": true,
+          "description": "Why a failed compile failed, in terms a founder can read. Null unless status is failed."
+        },
+        {
+          "name": "deleted",
+          "type": "Boolean",
+          "nullable": true,
+          "description": "Soft-delete flag; owner-data has no DELETE. Nullable for the declared-default reason — treat NULL as false."
+        }
+      ],
+      "indexes": [
+        {
+          "name": "idx_idea_scout_prds_owner",
+          "columns": [
+            "tenant_id",
+            "owner_sub"
+          ]
+        }
+      ],
+      "permissions": {
+        "list": {
+          "allowed": false
+        },
+        "read": {
+          "allowed": false
+        },
+        "create": {
+          "allowed": false
+        },
+        "update": {
+          "allowed": false
+        },
+        "delete": {
+          "allowed": false
+        }
+      },
+      "owner_scoped_service": {
+        "owner_column": "owner_sub",
+        "allowed_principals": [
+          "system:idea-scout"
+        ]
+      }
+    },
+    {
       "name": "idea_scout_build_types",
       "columns": [
         {

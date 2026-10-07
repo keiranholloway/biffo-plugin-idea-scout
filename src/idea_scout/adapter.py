@@ -39,6 +39,7 @@ from .models import (
     CadencePreference,
     Candidate,
     ModelCatalogEntry,
+    PrdRecord,
     ScoutRun,
     UserProfile,
 )
@@ -47,6 +48,7 @@ _ROOT = "/api/v1/internal"
 _RUNS = f"{_ROOT}/owner-data/idea_scout_runs"
 _CANDIDATES = f"{_ROOT}/owner-data/idea_scout_candidates"
 _CADENCE = f"{_ROOT}/owner-data/idea_scout_cadence"
+_PRDS = f"{_ROOT}/owner-data/idea_scout_prds"
 _AGENT_RUNS = f"{_ROOT}/agent-runs"
 _USER_PROFILE = f"{_ROOT}/user-profile/mine"
 _PLUGIN_CONFIG = f"{_ROOT}/plugins/me/config"
@@ -150,6 +152,22 @@ def _candidate_from_row(row: dict[str, Any]) -> Candidate:
         scorecard=_load_json(row.get("scorecard"), default=None),
         sources=_load_json(row.get("sources"), default=[]),
         model=row.get("model"),
+    )
+
+
+def _prd_from_row(row: dict[str, Any]) -> PrdRecord:
+    turns = row.get("turn_count")
+    return PrdRecord(
+        id=row["id"],
+        candidate_id=row["candidate_id"],
+        run_id=row["run_id"],
+        status=row.get("status"),
+        thread_id=row.get("thread_id"),
+        turn_count=int(turns) if turns is not None else 0,
+        compile_run_id=row.get("compile_run_id"),
+        prd=_load_json(row.get("prd"), default=None),
+        failure_reason=row.get("failure_reason"),
+        deleted=bool(row.get("deleted")),
     )
 
 
@@ -464,3 +482,27 @@ class CoreHttpGateway:
             (_candidate_from_row(row) for row in rows),
             key=lambda c: c.rank,
         )
+
+    async def get_candidate(self, *, owner_sub: str, candidate_id: str) -> Candidate | None:
+        # Core's owner-data read 404s on another owner's row, which is the
+        # whole ownership check — nothing here compares owners.
+        try:
+            row = await self._t.request("GET", f"{_CANDIDATES}/{candidate_id}")
+        except CoreNotFoundError:
+            return None
+        return _candidate_from_row(row)
+
+    # ── PRDs ─────────────────────────────────────────────────────────────────
+
+    async def get_prd_for_candidate(self, *, owner_sub: str, candidate_id: str) -> PrdRecord | None:
+        rows = await self._t.request("GET", _PRDS, params={"candidate_id": candidate_id})
+        for row in rows or []:
+            prd = _prd_from_row(row)
+            if prd.candidate_id == candidate_id and not prd.deleted:
+                return prd
+        return None
+
+    async def list_prds(self, *, owner_sub: str, run_id: str) -> list[PrdRecord]:
+        rows = await self._t.request("GET", _PRDS, params={"run_id": run_id})
+        prds = (_prd_from_row(row) for row in rows or [])
+        return [p for p in prds if p.run_id == run_id and not p.deleted]

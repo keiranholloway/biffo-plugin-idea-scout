@@ -440,3 +440,13 @@ async def test_finding_a_chain_run_fetches_it_in_full():
 
     assert view is not None
     assert view.messages == [{"role": "assistant"}]
+
+
+async def test_a_candidate_core_404s_reads_as_absent():
+    """Core 404s another owner's (or a missing) row; that is "not found", not a fault."""
+    transport = FakeTransport()
+    transport.not_found.add(("GET", f"{adapter._CANDIDATES}/c-missing"))
+
+    got = await CoreHttpGateway(transport).get_candidate(owner_sub="x", candidate_id="c-missing")
+
+    assert got is None

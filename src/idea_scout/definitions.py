@@ -32,6 +32,7 @@ into a Challenger/Analyst session precisely because the shapes match — so
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -279,6 +280,198 @@ class CandidateSet(BaseModel):
     candidates: list[Candidate] = Field(
         description=f"Between {MIN_CANDIDATES} and {MAX_CANDIDATES}, best first."
     )
+
+
+# ── Product requirements document (PRD) ──────────────────────────────────────
+
+
+class PrdPersona(BaseModel):
+    name: str
+    description: str = ""
+    needs: list[str] = Field(default_factory=list)
+
+
+class PrdConcept(BaseModel):
+    name: str
+    description: str = ""
+
+
+class PrdUserStory(BaseModel):
+    id: str = Field(description='Stable id, e.g. "US-01".')
+    title: str
+    as_a: str
+    i_want: str
+    so_that: str
+    acceptance_criteria: list[str] = Field(default_factory=list)
+
+
+class PrdRequirement(BaseModel):
+    id: str = Field(description='Stable id, e.g. "FR-01".')
+    area: str
+    requirement: str
+
+
+class PrdSurface(BaseModel):
+    name: str
+    purpose: str = ""
+    key_elements: list[str] = Field(default_factory=list)
+
+
+class PrdPermission(BaseModel):
+    role: str
+    allowed: list[str] = Field(default_factory=list)
+    denied: list[str] = Field(default_factory=list)
+
+
+class PrdEntity(BaseModel):
+    entity: str
+    fields: list[str] = Field(default_factory=list)
+    relationships: list[str] = Field(default_factory=list)
+    notes: str = ""
+
+
+class ProductRequirements(BaseModel):
+    """A full product requirements document for one candidate idea, in the
+    estate's PRD format. Stored as JSON text and rendered by
+    :func:`render_prd_markdown`."""
+
+    title: str
+    summary: str = ""
+    problem: str = ""
+    goals: list[str] = Field(default_factory=list)
+    non_goals: list[str] = Field(default_factory=list)
+    personas: list[PrdPersona] = Field(default_factory=list)
+    core_concepts: list[PrdConcept] = Field(default_factory=list)
+    user_stories: list[PrdUserStory] = Field(default_factory=list)
+    functional_requirements: list[PrdRequirement] = Field(default_factory=list)
+    ux_surfaces: list[PrdSurface] = Field(default_factory=list)
+    permissions: list[PrdPermission] = Field(default_factory=list)
+    data_model: list[PrdEntity] = Field(default_factory=list)
+    api_expectations: list[str] = Field(default_factory=list)
+    events_and_audit: list[str] = Field(default_factory=list)
+    success_metrics: list[str] = Field(default_factory=list)
+    edge_cases: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    sources: list[Source] = Field(default_factory=list)
+
+
+PRD_EMPTY_SECTION = "_None yet._"
+
+#: PRD lifecycle states, as stored in ``idea_scout_prds.status``.
+PRD_STATUSES = ("interviewing", "drafting", "draft", "final", "failed")
+
+
+def _bullets(items: list[str]) -> list[str]:
+    return [f"- {item}" for item in items]
+
+
+def render_prd_markdown(prd: ProductRequirements) -> str:
+    """Render a PRD as the estate's markdown format. Pure.
+
+    Every section is always emitted, in a fixed order — ``/biffo-sibling-plan``
+    reads these exact headings, so an empty one renders ``_None yet._`` rather
+    than being omitted.
+    """
+    sections: list[tuple[str, list[str]]] = []
+
+    sections.append(("Summary", [prd.summary] if prd.summary.strip() else []))
+    sections.append(("Problem", [prd.problem] if prd.problem.strip() else []))
+    sections.append(("Goals", _bullets(prd.goals)))
+    sections.append(("Non-Goals", _bullets(prd.non_goals)))
+
+    personas: list[str] = []
+    for persona in prd.personas:
+        personas += [f"### {persona.name}", ""]
+        if persona.description:
+            personas += [persona.description, ""]
+        if persona.needs:
+            personas += ["Needs:", *_bullets(persona.needs), ""]
+    sections.append(("Personas", personas))
+
+    sections.append(
+        (
+            "Core Concepts",
+            [
+                f"- **{c.name}**: {c.description}" if c.description else f"- **{c.name}**"
+                for c in prd.core_concepts
+            ],
+        )
+    )
+
+    stories: list[str] = []
+    for story in prd.user_stories:
+        stories += [
+            f"### {story.id}: {story.title}",
+            "",
+            f"- **As a** {story.as_a}",
+            f"- **I want** {story.i_want}",
+            f"- **So that** {story.so_that}",
+            "",
+        ]
+        if story.acceptance_criteria:
+            stories += ["Acceptance criteria:", *_bullets(story.acceptance_criteria), ""]
+    sections.append(("User Stories", stories))
+
+    requirements: list[str] = []
+    areas: dict[str, list[Any]] = {}
+    for req in prd.functional_requirements:
+        areas.setdefault(req.area, []).append(req)
+    for area, reqs in areas.items():
+        requirements += [f"### {area}", ""]
+        requirements += [f"- **{r.id}**: {r.requirement}" for r in reqs]
+        requirements.append("")
+    sections.append(("Functional Requirements", requirements))
+
+    surfaces: list[str] = []
+    for surface in prd.ux_surfaces:
+        surfaces += [f"### {surface.name}", ""]
+        if surface.purpose:
+            surfaces += [surface.purpose, ""]
+        if surface.key_elements:
+            surfaces += [*_bullets(surface.key_elements), ""]
+    sections.append(("UX Surfaces", surfaces))
+
+    permissions: list[str] = []
+    for perm in prd.permissions:
+        permissions += [f"### {perm.role}", ""]
+        if perm.allowed:
+            permissions += ["Allowed:", *_bullets(perm.allowed), ""]
+        if perm.denied:
+            permissions += ["Denied:", *_bullets(perm.denied), ""]
+    sections.append(("Permissions", permissions))
+
+    entities: list[str] = []
+    for entity in prd.data_model:
+        entities += [f"### {entity.entity}", ""]
+        if entity.fields:
+            entities += ["Fields:", *_bullets(entity.fields), ""]
+        if entity.relationships:
+            entities += ["Relationships:", *_bullets(entity.relationships), ""]
+        if entity.notes:
+            entities += [entity.notes, ""]
+    sections.append(("Data Model Alignment", entities))
+
+    sections.append(("API Expectations", _bullets(prd.api_expectations)))
+    sections.append(("Events And Audit", _bullets(prd.events_and_audit)))
+    sections.append(("Success Metrics", _bullets(prd.success_metrics)))
+    sections.append(("Edge Cases", _bullets(prd.edge_cases)))
+    sections.append(("Open Questions", _bullets(prd.open_questions)))
+    sections.append(
+        ("Sources", [f"- {s.url} — {s.note}" if s.note else f"- {s.url}" for s in prd.sources])
+    )
+
+    lines = [f"# PRD: {prd.title}", ""]
+    for heading, body in sections:
+        while body and body[-1] == "":
+            body = body[:-1]
+        lines += [f"## {heading}", "", *(body or [PRD_EMPTY_SECTION]), ""]
+    return "\n".join(lines).rstrip("\n") + "\n"
+
+
+def prd_filename(title: str) -> str:
+    """``prd-<slug-of-title>.md`` — ASCII-only so it is safe in a header."""
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return f"prd-{slug or 'untitled'}.md"
 
 
 # ── Prompts ──────────────────────────────────────────────────────────────────
