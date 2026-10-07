@@ -151,6 +151,34 @@ export interface Candidate {
   pitch: string
   scorecard: Scorecard | null
   sources: Source[]
+  /** Rides the candidates payload (the mount is pinned to 3 requests). `null`
+   * means no PRD has been started for this candidate. */
+  prd_status?: PrdStatus | null
+}
+
+export type PrdStatus = 'interviewing' | 'drafting' | 'draft' | 'final' | 'failed'
+
+export interface PrdMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface PrdState {
+  id: string
+  candidate_id: string
+  run_id: string
+  status: PrdStatus
+  thread_id: string | null
+  turn_count: number
+  max_turns: number
+}
+
+export interface PrdSession extends PrdState {
+  messages: PrdMessage[]
+}
+
+export interface PrdReply extends PrdState {
+  reply: string
 }
 
 export interface CandidatesResponse extends RunState {
@@ -229,6 +257,14 @@ export function createApi(getIdToken: () => string | null | Promise<string | nul
     getRun: (id: string) => request<RunState>('GET', `/runs/${id}`),
     getCandidates: (id: string) => request<CandidatesResponse>('GET', `/runs/${id}/candidates`),
     deleteRun: (id: string) => request<void>('POST', `/runs/${id}/delete`),
+    // POST both starts a PRD and resumes an existing one (no new thread), and
+    // returns the visible transcript either way.
+    startPrd: (candidateId: string) =>
+      request<PrdSession>('POST', `/candidates/${candidateId}/prd`),
+    sendPrdMessage: (prdId: string, message: string) =>
+      request<PrdReply>('POST', `/prds/${prdId}/messages`, { message }),
+    getPrdMessages: (prdId: string) =>
+      request<{ prd_id: string; messages: PrdMessage[] }>('GET', `/prds/${prdId}/messages`),
   }
 }
 

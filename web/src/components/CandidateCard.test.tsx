@@ -70,3 +70,23 @@ describe('CandidateCard', () => {
     expect(screen.getByText(/Evidence \(1\)/)).toBeInTheDocument()
   })
 })
+
+describe('CandidateCard PRD button', () => {
+  it('offers Build a PRD when there is no PRD, and keeps Pressure-test', () => {
+    render(<CandidateCard candidate={{ ...CANDIDATE, prd_status: null }} />)
+    expect(screen.getByRole('button', { name: 'Build a PRD' })).toBeInTheDocument()
+    expect(screen.getByText(/Pressure-test this/)).toBeInTheDocument()
+  })
+
+  it.each([
+    ['interviewing', 'Interviewing'],
+    ['drafting', 'Drafting'],
+    ['draft', 'Draft'],
+    ['final', 'Final'],
+    ['failed', 'Failed'],
+  ] as const)('offers Open PRD with a %s chip', (status, label) => {
+    render(<CandidateCard candidate={{ ...CANDIDATE, prd_status: status }} />)
+    expect(screen.getByRole('button', { name: 'Open PRD' })).toBeInTheDocument()
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+})

@@ -65,7 +65,16 @@ function classNamesUsed(): Set<string> {
 }
 
 /** Names built at runtime rather than written as literals. */
-const DYNAMIC = ['axis--high', 'axis--mid', 'axis--low', 'axis-pip', 'axis-pip--on', 'active']
+const DYNAMIC = ['axis--high', 'axis--mid', 'axis--low', 'axis-pip', 'axis-pip--on',
+  'active',
+  'prd-chip--interviewing',
+  'prd-chip--drafting',
+  'prd-chip--draft',
+  'prd-chip--final',
+  'prd-chip--failed',
+  'prd-msg--user',
+  'prd-msg--assistant',
+]
 
 function isStyled(name: string): boolean {
   // Matches `.name` as a whole class token — `.axis` must not be satisfied by
