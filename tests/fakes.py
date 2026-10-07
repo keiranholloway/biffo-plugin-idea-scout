@@ -31,6 +31,7 @@ from idea_scout.models import (
     CadencePreference,
     Candidate,
     ModelCatalogEntry,
+    PrdRecord,
     ScoutRun,
     UserProfile,
 )
@@ -205,6 +206,8 @@ class FakeCoreGateway:
         #: that could not possibly leak.
         self.cadence: dict[str, tuple[str, CadencePreference]] = {}
         self.candidates: list[Candidate] = []
+        #: PRD rows as (owner_sub, PrdRecord), owner-checked like Core does.
+        self.prds: list[tuple[str, PrdRecord]] = []
         self.agent_runs: dict[str, FakeAgentRun] = {}
         #: Definitions passed to request_agent_run, in order — so a test can
         #: assert what the agents were actually briefed with.
@@ -437,6 +440,26 @@ class FakeCoreGateway:
         if run is None or run.owner_sub != owner_sub:
             return []
         return sorted((c for c in self.candidates if c.run_id == run_id), key=lambda c: c.rank)
+
+    async def get_candidate(self, *, owner_sub: str, candidate_id: str) -> Candidate | None:
+        for c in self.candidates:
+            if c.id == candidate_id:
+                run = self.runs.get(c.run_id)
+                return c if run is not None and run.owner_sub == owner_sub else None
+        return None
+
+    async def get_prd_for_candidate(self, *, owner_sub: str, candidate_id: str) -> PrdRecord | None:
+        for owner, prd in self.prds:
+            if owner == owner_sub and prd.candidate_id == candidate_id and not prd.deleted:
+                return prd
+        return None
+
+    async def list_prds(self, *, owner_sub: str, run_id: str) -> list[PrdRecord]:
+        return [
+            prd
+            for owner, prd in self.prds
+            if owner == owner_sub and prd.run_id == run_id and not prd.deleted
+        ]
 
     # ── Test helpers ─────────────────────────────────────────────────────────
 

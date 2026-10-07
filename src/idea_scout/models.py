@@ -183,6 +183,23 @@ class Candidate:
 
 
 @dataclass(frozen=True)
+class PrdRecord:
+    """A stored PRD row (``idea_scout_prds``) — one per candidate."""
+
+    id: str
+    candidate_id: str
+    run_id: str
+    status: str | None
+    thread_id: str | None = None
+    turn_count: int = 0
+    compile_run_id: str | None = None
+    #: The parsed ``ProductRequirements`` JSON, or None before a draft exists.
+    prd: dict[str, object] | None = None
+    failure_reason: str | None = None
+    deleted: bool = False
+
+
+@dataclass(frozen=True)
 class AgentRunView:
     """A read of an async agent run (Core's AgentRun) — just what the plugin
     needs to decide whether it is done and to extract its output-tool call."""

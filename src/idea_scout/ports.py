@@ -23,6 +23,7 @@ from .models import (
     CadencePreference,
     Candidate,
     ModelCatalogEntry,
+    PrdRecord,
     ScoutRun,
     UserProfile,
 )
@@ -192,4 +193,19 @@ class CoreGateway(Protocol):
 
     async def list_candidates(self, *, owner_sub: str, run_id: str) -> list[Candidate]:
         """This run's stored candidates, ascending by rank."""
+        ...
+
+    async def get_candidate(self, *, owner_sub: str, candidate_id: str) -> Candidate | None:
+        """One candidate by id, or ``None`` if there is none *or it belongs to
+        another founder* — Core's owner-data read 404s on another owner's row."""
+        ...
+
+    # ── PRDs ─────────────────────────────────────────────────────────────────
+
+    async def get_prd_for_candidate(self, *, owner_sub: str, candidate_id: str) -> PrdRecord | None:
+        """The candidate's live (not soft-deleted) PRD row, or ``None``."""
+        ...
+
+    async def list_prds(self, *, owner_sub: str, run_id: str) -> list[PrdRecord]:
+        """The live PRD rows for one run's candidates."""
         ...

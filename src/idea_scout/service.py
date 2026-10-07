@@ -48,9 +48,12 @@ from .definitions import (
     SYNTHESIS_AGENT_NAME,
     CandidateSet,
     FindingSet,
+    ProductRequirements,
     complexity_label,
     findings_tool_schema,
+    prd_filename,
     preference_brief,
+    render_prd_markdown,
     research_definition,
 )
 from .models import (
@@ -64,6 +67,7 @@ from .models import (
     CadencePreference,
     CadenceState,
     Candidate,
+    PrdRecord,
     ScoutRun,
     UserProfile,
 )
@@ -79,6 +83,15 @@ class IdeaScoutError(Exception):
 
 class RunNotFoundError(IdeaScoutError):
     """No such run for this founder (missing, deleted, or owned by someone else)."""
+
+
+class CandidateNotFoundError(IdeaScoutError):
+    """No such candidate for this founder — missing, another founder's, or in a
+    deleted run. All three read the same, so a probe learns nothing."""
+
+
+class PrdNotFoundError(IdeaScoutError):
+    """The candidate has no PRD (or no draft of one) yet."""
 
 
 class UnknownBuildTypeError(IdeaScoutError):
@@ -422,6 +435,12 @@ class IdeaScoutService:
             return []
         return await self._core.list_candidates(owner_sub=owner_sub, run_id=run_id)
 
+    async def get_candidate_statuses(self, *, owner_sub: str, run_id: str) -> dict[str, str | None]:
+        """``{candidate_id: prd status}`` for a run — one read, so the candidates
+        payload can carry PRD presence without a per-candidate fetch."""
+        prds = await self._core.list_prds(owner_sub=owner_sub, run_id=run_id)
+        return {p.candidate_id: p.status for p in prds}
+
     async def delete_run(self, *, owner_sub: str, run_id: str) -> None:
         """Soft-delete, from any status — including in-flight. The agent runs are
         left alone: they are already paid for, and Core owns their lifecycle."""
@@ -615,6 +634,43 @@ class IdeaScoutService:
         if run is None or run.deleted:
             raise RunNotFoundError(run_id)
         return run
+
+    async def _load_owned_candidate(self, *, owner_sub: str, candidate_id: str) -> Candidate:
+        """A candidate this founder owns, in a run they own and have not deleted.
+
+        Core's owner-data read 404s on another owner's row, so the gateway
+        returning ``None`` covers the cross-owner case; the run check covers a
+        candidate whose run was soft-deleted.
+        """
+        candidate = await self._core.get_candidate(owner_sub=owner_sub, candidate_id=candidate_id)
+        if candidate is None:
+            raise CandidateNotFoundError(candidate_id)
+        try:
+            await self._load_owned(owner_sub=owner_sub, run_id=candidate.run_id)
+        except RunNotFoundError:
+            raise CandidateNotFoundError(candidate_id) from None
+        return candidate
+
+    async def get_prd(self, *, owner_sub: str, candidate_id: str) -> PrdRecord:
+        """The candidate's stored PRD row, or :class:`PrdNotFoundError`."""
+        await self._load_owned_candidate(owner_sub=owner_sub, candidate_id=candidate_id)
+        prd = await self._core.get_prd_for_candidate(owner_sub=owner_sub, candidate_id=candidate_id)
+        if prd is None:
+            raise PrdNotFoundError(candidate_id)
+        return prd
+
+    async def get_prd_markdown(self, *, owner_sub: str, candidate_id: str) -> tuple[str, str]:
+        """``(filename, markdown)`` for the candidate's draft PRD. Not found
+        until a draft has been compiled — an interview alone has nothing to
+        export."""
+        record = await self.get_prd(owner_sub=owner_sub, candidate_id=candidate_id)
+        if not record.prd:
+            raise PrdNotFoundError(candidate_id)
+        try:
+            prd = ProductRequirements.model_validate(record.prd)
+        except ValidationError:
+            raise PrdNotFoundError(candidate_id) from None
+        return prd_filename(prd.title), render_prd_markdown(prd)
 
     async def _resolve_agent(
         self, role: str, fallback_model: str, chosen_model_slug: str | None = None
