@@ -144,7 +144,7 @@ export function CandidateCard({
         {prdStatus != null && (
           <span className={`prd-chip prd-chip--${prdStatus}`}>{PRD_STATUS_LABELS[prdStatus]}</span>
         )}
-      <a className="candidate-promote" href={pressureTestUrl(candidate.pitch)} target="_top">
+      <a className="candidate-promote" href={pressureTestUrl(candidate.pitch, candidate.id)} target="_top">
         Pressure-test this →
       </a>
       </div>

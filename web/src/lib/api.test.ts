@@ -34,6 +34,18 @@ describe('pressureTestUrl', () => {
     expect(seed).toHaveLength(IDEATION_SEED_LIMIT)
   })
 
+  it('includes the candidate id alongside the seed', () => {
+    const url = pressureTestUrl('an idea', 'cand 1&2')
+    const params = new URL(url, 'https://example.com').searchParams
+
+    expect(params.get('seed')).toBe('an idea')
+    expect(params.get('candidate_id')).toBe('cand 1&2')
+  })
+
+  it('omits candidate_id when none is given', () => {
+    expect(pressureTestUrl('an idea')).not.toContain('candidate_id')
+  })
+
   it('round-trips a pitch containing newlines', () => {
     const pitch = 'Line one.\n\nLine two.'
     const url = pressureTestUrl(pitch)
