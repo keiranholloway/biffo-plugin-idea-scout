@@ -217,6 +217,12 @@ class FakeCoreGateway:
         self.requested: list[dict[str, Any]] = []
         #: Agent run ids the fake should claim Core has never heard of.
         self.vanished_agent_runs: set[str] = set()
+        #: Ideation content keyed by candidate id, as (owner_sub, payload) —
+        #: owner-checked like the grant-scoped read. ``ideation_error`` makes
+        #: the read fail; the port contract says the fake then returns None.
+        self.ideation: dict[str, tuple[str, dict[str, Any]]] = {}
+        self.ideation_error = False
+        self.ideation_reads: list[tuple[str, str]] = []
         self._next_id = 0
 
     def _id(self, prefix: str) -> str:
@@ -451,6 +457,17 @@ class FakeCoreGateway:
                 run = self.runs.get(c.run_id)
                 return c if run is not None and run.owner_sub == owner_sub else None
         return None
+
+    async def get_linked_ideation(
+        self, *, owner_sub: str, candidate_id: str
+    ) -> dict[str, Any] | None:
+        self.ideation_reads.append((owner_sub, candidate_id))
+        if self.ideation_error:
+            return None
+        entry = self.ideation.get(candidate_id)
+        if entry is None or entry[0] != owner_sub:
+            return None
+        return entry[1]
 
     async def get_prd_for_candidate(self, *, owner_sub: str, candidate_id: str) -> PrdRecord | None:
         for owner, prd in self.prds:
