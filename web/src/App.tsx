@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CadenceControl } from "./components/CadenceControl";
 import { CandidateCard } from "./components/CandidateCard";
+import { PrdView } from "./components/PrdView";
 import { RunForm } from "./components/RunForm";
 import { ageInDays } from "./lib/cadence";
 import {
@@ -54,6 +55,9 @@ export default function App() {
   const [savingCadence, setSavingCadence] = useState(false);
   const [current, setCurrent] = useState<RunState | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  // The candidate whose PRD view is open, or null. Same state-switch approach
+  // as `current` — no router.
+  const [prdCandidate, setPrdCandidate] = useState<Candidate | null>(null);
   const [starting, setStarting] = useState(false);
   // Whether the first load actually returned. Without this an *unloaded* app and
   // one that loaded an empty list are indistinguishable, and the empty-list copy
@@ -357,6 +361,19 @@ export default function App() {
         <h1>Idea Scout</h1>
         {error != null && <p className="error">{error}</p>}
 
+        {prdCandidate != null ? (
+          <PrdView
+            api={api}
+            candidate={prdCandidate}
+            onBack={() => {
+              const runId = current?.run_id;
+              setPrdCandidate(null);
+              // Refresh so the card shows the PRD's new status.
+              if (runId != null) void openRun(runId);
+            }}
+          />
+        ) : (
+          <>
         {current == null && !loaded && <p className="muted">Loading…</p>}
 
         {current == null && loaded ? (
@@ -416,8 +433,14 @@ export default function App() {
             )}
 
             {candidates.map((candidate) => (
-              <CandidateCard key={candidate.id} candidate={candidate} />
+              <CandidateCard
+                key={candidate.id}
+                candidate={candidate}
+                onOpenPrd={setPrdCandidate}
+              />
             ))}
+          </>
+        )}
           </>
         )}
       </main>

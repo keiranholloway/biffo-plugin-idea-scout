@@ -1,4 +1,4 @@
-import type { Candidate, ScoreAxis, Scorecard } from '../lib/api'
+import type { Candidate, PrdStatus, ScoreAxis, Scorecard } from '../lib/api'
 import { pressureTestUrl } from '../lib/api'
 
 // The four axes, in the order they are argued about. Labels are spelled out
@@ -50,7 +50,22 @@ function Axis({ label, hint, axis }: { label: string; hint?: string; axis: Score
   )
 }
 
-export function CandidateCard({ candidate }: { candidate: Candidate }) {
+export const PRD_STATUS_LABELS: Record<PrdStatus, string> = {
+  interviewing: 'Interviewing',
+  drafting: 'Drafting',
+  draft: 'Draft',
+  final: 'Final',
+  failed: 'Failed',
+}
+
+export function CandidateCard({
+  candidate,
+  onOpenPrd,
+}: {
+  candidate: Candidate
+  onOpenPrd?: (candidate: Candidate) => void
+}) {
+  const prdStatus = candidate.prd_status ?? null
   const { scorecard } = candidate
   return (
     <article className="candidate">
@@ -122,9 +137,17 @@ export function CandidateCard({ candidate }: { candidate: Candidate }) {
 
       {/* target _top: Idea Scout runs inside the dashboard's iframe, so open the
           Ideation Engine's dashboard page in place of the whole page, not nested. */}
+      <div className="candidate-actions">
+        <button type="button" className="candidate-prd" onClick={() => onOpenPrd?.(candidate)}>
+          {prdStatus == null ? 'Build a PRD' : 'Open PRD'}
+        </button>
+        {prdStatus != null && (
+          <span className={`prd-chip prd-chip--${prdStatus}`}>{PRD_STATUS_LABELS[prdStatus]}</span>
+        )}
       <a className="candidate-promote" href={pressureTestUrl(candidate.pitch)} target="_top">
         Pressure-test this →
       </a>
+      </div>
     </article>
   )
 }
