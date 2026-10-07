@@ -65,9 +65,11 @@ from idea_scout.definitions import (
     COMMUNITY_AGENT_NAME,
     COMPETITIVE_AGENT_NAME,
     DEFAULT_INSTRUCTIONS,
+    DEFAULT_PRD_INTERVIEWER_MODEL,
     DEFAULT_RESEARCH_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
     NARRATIVE_AGENT_NAME,
+    PRD_INTERVIEWER_AGENT_NAME,
     SYNTHESIS_AGENT_NAME,
     seed_config_payloads,
 )
@@ -230,7 +232,7 @@ async def chat_agent_history(agent_key: str, admin: ForwardedUser = Depends(requ
 # tests passed, and the endpoint was unreachable (#69).
 @app.get("/builtin-agents")
 def builtin_agents() -> dict:
-    """The four code-defined agent roles with their real prompts.
+    """The five code-defined agent roles with their real prompts.
 
     The UI merges these with stored rows to show the complete picture: which
     prompts are still defined in code and which have been promoted to the
@@ -288,6 +290,20 @@ def builtin_agents() -> dict:
                 "max_history_messages": 10,
                 "max_output_tokens": 2000,
                 "timeout_seconds": 30,
+            },
+            {
+                "agent_key": PRD_INTERVIEWER_AGENT_NAME,
+                "agent_name": PRD_INTERVIEWER_AGENT_NAME,
+                "role": PRD_INTERVIEWER_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[PRD_INTERVIEWER_AGENT_NAME],
+                "model": DEFAULT_PRD_INTERVIEWER_MODEL,
+                "required_group": "founder",
+                "active": True,
+                # Holds the whole interview: the dossier plus up to PRD_MAX_TURNS
+                # founder turns and replies.
+                "max_history_messages": 40,
+                "max_output_tokens": 2000,
+                "timeout_seconds": 60,
             },
         ]
     }

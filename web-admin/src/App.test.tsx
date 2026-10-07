@@ -3,7 +3,7 @@
  *
  * M2 adds three features:
  * - Tab switching: each tab pane renders its content
- * - Agents tab: edit admin-configured prompts for four agent roles
+ * - Agents tab: edit admin-configured prompts for five agent roles
  * - Models tab: CRUD the model catalog with web_capable visibility
  */
 import { render, screen, waitFor } from '@testing-library/react'

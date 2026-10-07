@@ -450,3 +450,13 @@ async def test_a_candidate_core_404s_reads_as_absent():
     got = await CoreHttpGateway(transport).get_candidate(owner_sub="x", candidate_id="c-missing")
 
     assert got is None
+
+
+async def test_a_prd_core_404s_reads_as_absent():
+    """Core 404s another owner's (or a missing) PRD; that is "not found", not a fault."""
+    transport = FakeTransport()
+    transport.not_found.add(("GET", f"{adapter._PRDS}/p-missing"))
+
+    got = await CoreHttpGateway(transport).get_prd(owner_sub="x", prd_id="p-missing")
+
+    assert got is None

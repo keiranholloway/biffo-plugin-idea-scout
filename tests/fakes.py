@@ -209,6 +209,9 @@ class FakeCoreGateway:
         #: PRD rows as (owner_sub, PrdRecord), owner-checked like Core does.
         self.prds: list[tuple[str, PrdRecord]] = []
         self.agent_runs: dict[str, FakeAgentRun] = {}
+        #: Chat turns sent, and the per-thread transcript Core would return.
+        self.chat_turns: list[dict[str, Any]] = []
+        self.threads: dict[str, list[dict[str, Any]]] = {}
         #: Definitions passed to request_agent_run, in order — so a test can
         #: assert what the agents were actually briefed with.
         self.requested: list[dict[str, Any]] = []
@@ -461,6 +464,53 @@ class FakeCoreGateway:
             for owner, prd in self.prds
             if owner == owner_sub and prd.run_id == run_id and not prd.deleted
         ]
+
+    async def get_prd(self, *, owner_sub: str, prd_id: str) -> PrdRecord | None:
+        for owner, prd in self.prds:
+            if prd.id == prd_id and owner == owner_sub and not prd.deleted:
+                return prd
+        return None
+
+    async def create_prd(
+        self, *, owner_sub: str, candidate_id: str, run_id: str, thread_id: str
+    ) -> PrdRecord:
+        prd = PrdRecord(
+            id=self._id("prd"),
+            candidate_id=candidate_id,
+            run_id=run_id,
+            status="interviewing",
+            thread_id=thread_id,
+            turn_count=0,
+            deleted=False,
+        )
+        self.prds.append((owner_sub, prd))
+        return prd
+
+    async def update_prd(self, *, prd_id: str, **fields: Any) -> None:
+        from dataclasses import replace
+
+        for i, (owner, prd) in enumerate(self.prds):
+            if prd.id == prd_id:
+                self.prds[i] = (owner, replace(prd, **fields))
+                return
+        raise KeyError(prd_id)
+
+    async def run_chat_turn(self, *, agent_name: str, thread_id: str, message: str) -> str:
+        """Appends the turn to the thread the way Core's thread read returns it:
+        ``{role, content}`` user/assistant messages, in order, each once."""
+        self.chat_turns.append(
+            {"agent_name": agent_name, "thread_id": thread_id, "message": message}
+        )
+        reply = f"reply {len([t for t in self.chat_turns if t['thread_id'] == thread_id])}"
+        thread = self.threads.setdefault(thread_id, [])
+        thread.append({"role": "user", "content": message})
+        thread.append({"role": "assistant", "content": reply})
+        return reply
+
+    async def read_thread_messages(self, *, thread_id: str) -> list[dict[str, Any]]:
+        # Core's response carries system/tool machinery too in the stored runs
+        # but filters them on read; a fake mirrors the filtered shape.
+        return list(self.threads.get(thread_id, []))
 
     # ── Test helpers ─────────────────────────────────────────────────────────
 

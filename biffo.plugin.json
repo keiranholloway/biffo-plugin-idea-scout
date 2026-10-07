@@ -16,8 +16,11 @@
     "run-output-tool": "^1",
     "owner-scoped-tables": "^1",
     "chat-agent-registry": "^1",
-    "user-profile-read": "^1"
+    "user-profile-read": "^1",
+    "chat-turn": "^1",
+    "thread-messages-read": "^1"
   },
+  "chat_agents_dynamic": true,
   "user_ingress": {
     "required_group": "founder",
     "app": "idea_scout.app:app"

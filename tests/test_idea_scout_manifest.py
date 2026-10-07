@@ -34,6 +34,8 @@ _ROOT = MANIFEST_PATH.parent
 #   owner-scoped-tables   -> /internal/owner-data/idea_scout_{runs,candidates,cadence,prds}
 #   chat-agent-registry   -> the admin-editable prompt/model per agent role
 #   user-profile-read     -> /internal/user-profile/mine (biffo-platform #74)
+#   chat-turn             -> /internal/agent-chat/{agent_key} (the PRD interview)
+#   thread-messages-read  -> /internal/agent-runs/threads/{id}/messages
 EXPECTED_CAPABILITIES = {
     "agent-run-request",
     "agent-run-read",
@@ -41,6 +43,8 @@ EXPECTED_CAPABILITIES = {
     "owner-scoped-tables",
     "chat-agent-registry",
     "user-profile-read",
+    "chat-turn",
+    "thread-messages-read",
 }
 
 OWNER_SCOPED_TABLES = {

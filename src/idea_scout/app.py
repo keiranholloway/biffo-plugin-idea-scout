@@ -37,6 +37,7 @@ from .definitions import (
     MAX_COMPLEXITY,
     MIN_CADENCE_DAYS,
     MIN_COMPLEXITY,
+    PRD_MAX_TURNS,
     PREFERENCES,
     complexity_label,
     seed_config_payloads,
@@ -50,7 +51,9 @@ from .service import (
     InvalidCadenceError,
     InvalidComplexityError,
     MalformedCandidatesError,
+    PrdDraftingError,
     PrdNotFoundError,
+    PrdTurnLimitError,
     RunNotFoundError,
     UnknownBuildTypeError,
     UnknownBusinessModelError,
@@ -131,6 +134,8 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     RunNotFoundError: 404,
     CandidateNotFoundError: 404,
     PrdNotFoundError: 404,
+    PrdTurnLimitError: 409,
+    PrdDraftingError: 409,
     UnknownBuildTypeError: 422,
     UnknownBusinessModelError: 422,
     InvalidComplexityError: 422,
@@ -502,6 +507,59 @@ async def download_prd_markdown(
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _prd_state(prd: Any) -> dict[str, Any]:
+    return {
+        "id": prd.id,
+        "candidate_id": prd.candidate_id,
+        "run_id": prd.run_id,
+        "status": prd.status,
+        "thread_id": prd.thread_id,
+        "turn_count": prd.turn_count,
+        "max_turns": PRD_MAX_TURNS,
+    }
+
+
+@app.post("/candidates/{candidate_id}/prd")
+async def start_prd(
+    candidate_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict:
+    """Start the candidate's PRD interview, or resume it without a new thread."""
+    prd = await svc.start_prd(owner_sub=founder.sub, candidate_id=candidate_id)
+    messages = await svc.get_prd_messages(owner_sub=founder.sub, prd_id=prd.id)
+    return {**_prd_state(prd), "messages": messages}
+
+
+class PrdMessageBody(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+
+
+@app.post("/prds/{prd_id}/messages")
+async def send_prd_message(
+    prd_id: str,
+    body: PrdMessageBody,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict:
+    """One interview turn; 409 at the turn cap or while a draft is compiling."""
+    reply, prd = await svc.send_prd_message(
+        owner_sub=founder.sub, prd_id=prd_id, message=body.message
+    )
+    return {**_prd_state(prd), "reply": reply}
+
+
+@app.get("/prds/{prd_id}/messages")
+async def read_prd_messages(
+    prd_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict:
+    """The visible transcript (the dossier briefing is hidden)."""
+    messages = await svc.get_prd_messages(owner_sub=founder.sub, prd_id=prd_id)
+    return {"prd_id": prd_id, "messages": messages}
 
 
 @app.get("/cadence")
