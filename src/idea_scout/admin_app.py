@@ -66,10 +66,12 @@ from idea_scout.definitions import (
     COMPETITIVE_AGENT_NAME,
     DEFAULT_INSTRUCTIONS,
     DEFAULT_PRD_INTERVIEWER_MODEL,
+    DEFAULT_PRD_WRITER_MODEL,
     DEFAULT_RESEARCH_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
     NARRATIVE_AGENT_NAME,
     PRD_INTERVIEWER_AGENT_NAME,
+    PRD_WRITER_AGENT_NAME,
     SYNTHESIS_AGENT_NAME,
     seed_config_payloads,
 )
@@ -304,6 +306,18 @@ def builtin_agents() -> dict:
                 "max_history_messages": 40,
                 "max_output_tokens": 2000,
                 "timeout_seconds": 60,
+            },
+            {
+                "agent_key": PRD_WRITER_AGENT_NAME,
+                "agent_name": PRD_WRITER_AGENT_NAME,
+                "role": PRD_WRITER_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[PRD_WRITER_AGENT_NAME],
+                "model": DEFAULT_PRD_WRITER_MODEL,
+                "required_group": "founder",
+                "active": True,
+                "max_history_messages": 10,
+                "max_output_tokens": 8000,
+                "timeout_seconds": 120,
             },
         ]
     }

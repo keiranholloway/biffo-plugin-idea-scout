@@ -36,6 +36,7 @@ from pydantic import ValidationError
 from .definitions import (
     CANDIDATES_TOOL_NAME,
     DEFAULT_CADENCE_DAYS,
+    DEFAULT_PRD_WRITER_MODEL,
     FINDINGS_TOOL_NAME,
     MAX_CADENCE_DAYS,
     MAX_CANDIDATES,
@@ -46,6 +47,8 @@ from .definitions import (
     PRD_DOSSIER_MARKER,
     PRD_INTERVIEWER_AGENT_NAME,
     PRD_MAX_TURNS,
+    PRD_TOOL_NAME,
+    PRD_WRITER_AGENT_NAME,
     PREFERENCE_KEYS,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
@@ -55,6 +58,8 @@ from .definitions import (
     complexity_label,
     findings_tool_schema,
     prd_filename,
+    prd_tool_schema,
+    prd_writer_definition,
     preference_brief,
     render_prd_markdown,
     research_definition,
@@ -109,6 +114,13 @@ class PrdDraftingError(IdeaScoutError):
 
     def __init__(self, prd_id: str) -> None:
         super().__init__(f"PRD {prd_id} is being drafted; try again when it finishes.")
+
+
+class PrdStateError(IdeaScoutError):
+    """The PRD is not in a state this action applies to (HTTP 409)."""
+
+    def __init__(self, prd_id: str, status: str | None, wanted: str) -> None:
+        super().__init__(f"PRD {prd_id} is '{status}'; only a '{wanted}' PRD can do that.")
 
 
 class UnknownBuildTypeError(IdeaScoutError):
@@ -181,6 +193,10 @@ class MalformedCandidatesError(IdeaScoutError):
     """
 
 
+class MalformedPrdError(IdeaScoutError):
+    """The PRD writer's output was missing or did not match the schema."""
+
+
 class AgentConfigMissingError(IdeaScoutError):
     """An agent role has no configured row and seeding has not run.
 
@@ -212,6 +228,19 @@ def extract_findings(run_messages: list[dict[str, Any]]) -> FindingSet | None:
         return FindingSet.model_validate(data)
     except ValidationError:
         return None
+
+
+def extract_prd(run_messages: list[dict[str, Any]]) -> ProductRequirements:
+    """Pull the compiled PRD out of the writer run's transcript.
+
+    Raises :class:`MalformedPrdError` if the tool call is missing or invalid."""
+    data = _tool_call_arguments(run_messages, PRD_TOOL_NAME)
+    if data is None:
+        raise MalformedPrdError(f"the writer run produced no {PRD_TOOL_NAME} tool call")
+    try:
+        return ProductRequirements.model_validate(data)
+    except ValidationError as exc:
+        raise MalformedPrdError(str(exc)) from exc
 
 
 def extract_candidates(run_messages: list[dict[str, Any]]) -> CandidateSet:
@@ -708,7 +737,96 @@ class IdeaScoutService:
         prd = await self._core.get_prd_for_candidate(owner_sub=owner_sub, candidate_id=candidate_id)
         if prd is None:
             raise PrdNotFoundError(candidate_id)
-        return prd
+        return await self._collect_draft(prd)
+
+    async def get_prd_by_id(self, *, owner_sub: str, prd_id: str) -> PrdRecord:
+        """A PRD by its own id, collecting a finished draft run first."""
+        prd = await self._load_owned_prd(owner_sub=owner_sub, prd_id=prd_id)
+        return await self._collect_draft(prd)
+
+    #: Shown when the writer run was never claimed by a runtime.
+    DRAFT_NEVER_STARTED_REASON = (
+        "The draft never started — the work was queued but nothing picked it up. "
+        "Your previous draft, if any, is unchanged. Updating the draft again usually works."
+    )
+
+    async def _collect_draft(self, prd: PrdRecord) -> PrdRecord:
+        """If the PRD is ``drafting``, read the writer run and settle it.
+
+        Success stores the PRD and sets ``draft``. A failed, never-started,
+        vanished or malformed run sets ``failed`` with a reason and leaves the
+        previously stored ``prd`` untouched. Still running: nothing changes.
+        """
+        if prd.status != "drafting":
+            return prd
+        if prd.compile_run_id is None:
+            return await self._fail_draft(prd, self.DRAFT_NEVER_STARTED_REASON)
+        view = await self._core.get_agent_run(run_id=prd.compile_run_id)
+        if view is not None and not view.is_terminal:
+            return prd
+        if view is not None and view.never_started:
+            return await self._fail_draft(prd, self.DRAFT_NEVER_STARTED_REASON)
+        if view is None or not view.succeeded:
+            return await self._fail_draft(
+                prd, "The draft failed to compile. Your previous draft, if any, is kept."
+            )
+        try:
+            compiled = extract_prd(view.messages)
+        except MalformedPrdError:
+            return await self._fail_draft(
+                prd,
+                "The draft finished but returned nothing usable. "
+                "Your previous draft, if any, is kept.",
+            )
+        body = compiled.model_dump()
+        await self._core.update_prd(prd_id=prd.id, prd=body, status="draft", failure_reason=None)
+        return replace(prd, prd=body, status="draft", failure_reason=None)
+
+    async def _fail_draft(self, prd: PrdRecord, reason: str) -> PrdRecord:
+        await self._core.update_prd(prd_id=prd.id, status="failed", failure_reason=reason)
+        return replace(prd, status="failed", failure_reason=reason)
+
+    async def draft_prd(self, *, owner_sub: str, prd_id: str) -> PrdRecord:
+        """Request an async compile of the interview into a structured PRD."""
+        prd = await self._load_owned_prd(owner_sub=owner_sub, prd_id=prd_id)
+        prd = await self._collect_draft(prd)
+        if prd.status == "drafting":
+            raise PrdDraftingError(prd_id)
+        assert prd.thread_id is not None
+        candidate = await self._load_owned_candidate(
+            owner_sub=owner_sub, candidate_id=prd.candidate_id
+        )
+        run = await self._load_owned(owner_sub=owner_sub, run_id=candidate.run_id)
+        research = await self.get_research(owner_sub=owner_sub, run_id=run.id)
+        dossier = _build_dossier(candidate=candidate, run=run, research=research)
+        conversation = await self.get_prd_messages(owner_sub=owner_sub, prd_id=prd_id)
+        instructions, model = await self._resolve_agent(
+            PRD_WRITER_AGENT_NAME, DEFAULT_PRD_WRITER_MODEL
+        )
+        compile_run_id = await self._core.request_agent_run(
+            agent_name=PRD_WRITER_AGENT_NAME,
+            definition=prd_writer_definition(model=model, instructions=instructions),
+            output_tool=prd_tool_schema(),
+            input_payload={
+                "dossier": dossier,
+                "conversation": conversation,
+                "previous_draft": prd.prd,
+            },
+            causation_id=str(uuid.uuid4()),
+        )
+        await self._core.update_prd(
+            prd_id=prd.id, compile_run_id=compile_run_id, status="drafting", failure_reason=None
+        )
+        return replace(prd, compile_run_id=compile_run_id, status="drafting", failure_reason=None)
+
+    async def finalise_prd(self, *, owner_sub: str, prd_id: str) -> PrdRecord:
+        """``draft`` -> ``final``; any other status is a conflict."""
+        prd = await self._load_owned_prd(owner_sub=owner_sub, prd_id=prd_id)
+        prd = await self._collect_draft(prd)
+        if prd.status != "draft":
+            raise PrdStateError(prd_id, prd.status, "draft")
+        await self._core.update_prd(prd_id=prd.id, status="final")
+        return replace(prd, status="final")
 
     async def get_prd_markdown(self, *, owner_sub: str, candidate_id: str) -> tuple[str, str]:
         """``(filename, markdown)`` for the candidate's draft PRD. Not found
@@ -743,7 +861,7 @@ class IdeaScoutService:
                 thread_id=str(uuid.uuid4()),
             )
         elif prd.turn_count > 0 or prd.thread_id is None:
-            return prd
+            return await self._collect_draft(prd)
         run = await self._load_owned(owner_sub=owner_sub, run_id=candidate.run_id)
         research = await self.get_research(owner_sub=owner_sub, run_id=run.id)
         dossier = _build_dossier(candidate=candidate, run=run, research=research)
@@ -775,8 +893,12 @@ class IdeaScoutService:
         reply = await self._core.run_chat_turn(
             agent_name=PRD_INTERVIEWER_AGENT_NAME, thread_id=prd.thread_id, message=message
         )
-        await self._core.update_prd(prd_id=prd.id, turn_count=prd.turn_count + 1)
-        return reply, replace(prd, turn_count=prd.turn_count + 1)
+        changes: dict[str, Any] = {"turn_count": prd.turn_count + 1}
+        if prd.status == "final":
+            # The interview has moved on, so the final draft is stale.
+            changes["status"] = "draft"
+        await self._core.update_prd(prd_id=prd.id, **changes)
+        return reply, replace(prd, **changes)
 
     async def get_prd_messages(self, *, owner_sub: str, prd_id: str) -> list[dict[str, Any]]:
         """The visible transcript: user/assistant turns in order, without the

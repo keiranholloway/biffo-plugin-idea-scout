@@ -157,6 +157,7 @@ def test_every_agent_role_has_a_default_prompt_and_vice_versa():
         *d.RESEARCH_AGENT_NAMES,
         d.SYNTHESIS_AGENT_NAME,
         d.PRD_INTERVIEWER_AGENT_NAME,
+        d.PRD_WRITER_AGENT_NAME,
     }
 
 
