@@ -31,7 +31,7 @@ def test_builtin_agents_endpoint_exists():
     assert response.status_code == 200
     data = response.json()
     assert "agents" in data
-    assert len(data["agents"]) == 5
+    assert len(data["agents"]) == 6
 
 
 def test_builtin_agents_research_models_have_online_suffix():
