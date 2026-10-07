@@ -53,6 +53,7 @@ from .service import (
     MalformedCandidatesError,
     PrdDraftingError,
     PrdNotFoundError,
+    PrdStateError,
     PrdTurnLimitError,
     RunNotFoundError,
     UnknownBuildTypeError,
@@ -136,6 +137,7 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     PrdNotFoundError: 404,
     PrdTurnLimitError: 409,
     PrdDraftingError: 409,
+    PrdStateError: 409,
     UnknownBuildTypeError: 422,
     UnknownBusinessModelError: 422,
     InvalidComplexityError: 422,
@@ -479,6 +481,10 @@ async def read_prd(
 ) -> dict[str, Any]:
     """The candidate's stored PRD row; 404 if it has none (or is not yours)."""
     prd = await svc.get_prd(owner_sub=founder.sub, candidate_id=candidate_id)
+    return _prd_full(prd)
+
+
+def _prd_full(prd: Any) -> dict[str, Any]:
     return {
         "id": prd.id,
         "candidate_id": prd.candidate_id,
@@ -490,6 +496,36 @@ async def read_prd(
         "prd": prd.prd,
         "failure_reason": prd.failure_reason,
     }
+
+
+@app.get("/prds/{prd_id}")
+async def read_prd_by_id(
+    prd_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """One PRD by id; collects a finished draft run first."""
+    return _prd_full(await svc.get_prd_by_id(owner_sub=founder.sub, prd_id=prd_id))
+
+
+@app.post("/prds/{prd_id}/draft")
+async def draft_prd(
+    prd_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """Request an async compile of the interview; 409 if one is in flight."""
+    return _prd_full(await svc.draft_prd(owner_sub=founder.sub, prd_id=prd_id))
+
+
+@app.post("/prds/{prd_id}/finalise")
+async def finalise_prd(
+    prd_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict[str, Any]:
+    """Mark a draft PRD final; 409 from any other status."""
+    return _prd_full(await svc.finalise_prd(owner_sub=founder.sub, prd_id=prd_id))
 
 
 @app.get("/candidates/{candidate_id}/prd.md")
