@@ -200,6 +200,20 @@ class CoreGateway(Protocol):
         another founder* — Core's owner-data read 404s on another owner's row."""
         ...
 
+    # ── Linked Ideation content (#180) ───────────────────────────────────────
+
+    async def get_linked_ideation(
+        self, *, owner_sub: str, candidate_id: str
+    ) -> dict[str, Any] | None:
+        """The Pressure Test report and Brain-Storm research Ideation holds for
+        this candidate, read live under the owner-scoped grant, as
+        ``{"report": ..., "research": ...}`` (either key may be absent).
+
+        Best-effort by contract: ``None`` when nothing is linked, when the grant
+        is missing, or on any Ideation/Core error. It never raises, and it is
+        never another founder's data."""
+        ...
+
     # ── PRDs ─────────────────────────────────────────────────────────────────
 
     async def get_prd_for_candidate(self, *, owner_sub: str, candidate_id: str) -> PrdRecord | None:

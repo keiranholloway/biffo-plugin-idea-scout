@@ -49,6 +49,9 @@ _RUNS = f"{_ROOT}/owner-data/idea_scout_runs"
 _CANDIDATES = f"{_ROOT}/owner-data/idea_scout_candidates"
 _CADENCE = f"{_ROOT}/owner-data/idea_scout_cadence"
 _PRDS = f"{_ROOT}/owner-data/idea_scout_prds"
+# Ideation's owner-scoped read of what it holds for a candidate (#180). Reached
+# under the explicit read grant; Core scopes it to the forwarded founder.
+_LINKED_IDEATION = f"{_ROOT}/plugins/ideation/linked-ideas"
 _AGENT_RUNS = f"{_ROOT}/agent-runs"
 _AGENT_CHAT = f"{_ROOT}/agent-chat"
 _USER_PROFILE = f"{_ROOT}/user-profile/mine"
@@ -492,6 +495,24 @@ class CoreHttpGateway:
         except CoreNotFoundError:
             return None
         return _candidate_from_row(row)
+
+    # ── Linked Ideation content (#180) ───────────────────────────────────────
+
+    async def get_linked_ideation(
+        self, *, owner_sub: str, candidate_id: str
+    ) -> dict[str, Any] | None:
+        # Best-effort: no grant (403), nothing linked (404), or any Ideation
+        # failure must leave the PRD unblocked, so every error is "no section".
+        try:
+            body = await self._t.request(
+                "GET", _LINKED_IDEATION, params={"source_candidate_id": candidate_id}
+            )
+        except Exception:
+            return None
+        if not isinstance(body, dict):
+            return None
+        linked = {k: body[k] for k in ("report", "research") if body.get(k)}
+        return linked or None
 
     # ── PRDs ─────────────────────────────────────────────────────────────────
 
