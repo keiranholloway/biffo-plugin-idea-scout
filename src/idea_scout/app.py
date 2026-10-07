@@ -426,6 +426,17 @@ async def read_run(
     return _run_state(await svc.get_run(owner_sub=founder.sub, run_id=run_id))
 
 
+@app.get("/runs/{run_id}/research")
+async def read_research(
+    run_id: str,
+    founder: ForwardedUser = Depends(require_founder),
+    svc: IdeaScoutService = Depends(get_service),
+) -> dict:
+    """The three research agents' findings, read back from their agent runs."""
+    research = await svc.get_research(owner_sub=founder.sub, run_id=run_id)
+    return {"run_id": run_id, "research": research}
+
+
 @app.get("/runs/{run_id}/candidates")
 async def read_candidates(
     run_id: str,
