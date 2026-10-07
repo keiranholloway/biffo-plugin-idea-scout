@@ -236,3 +236,11 @@ def test_candidate_in_a_deleted_run_is_404(client, core):
     client.post(f"/runs/{run_id}/delete")
     assert client.get(f"/candidates/{cid}/prd").status_code == 404
     assert client.get(f"/candidates/{cid}/prd.md").status_code == 404
+
+
+def test_a_stored_prd_that_no_longer_validates_is_not_exportable(client, core):
+    run_id = _completed_run(client, core)
+    cid = client.get(f"/runs/{run_id}/candidates").json()["candidates"][0]["id"]
+    _add_prd(core, run_id, cid, prd={"title": ["not", "a", "string"]})
+
+    assert client.get(f"/candidates/{cid}/prd.md").status_code == 404
