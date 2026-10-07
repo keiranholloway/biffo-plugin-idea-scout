@@ -694,3 +694,63 @@ def test_withdrawn_last_used_model_falls_back_to_default(client, core):
     last = client.get("/models/last-used").json()["research_model"]
     assert last is None
     assert _start(client).status_code == 201
+
+
+# ── Research findings ────────────────────────────────────────────────────────
+
+
+def _research_run(core, run_id):
+    return core.research_runs_for(run_id)
+
+
+def _real_shape(name, args):
+    """Core's agent-run shape: tool calls under messages[].tool_calls[].function."""
+    return [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": name, "arguments": args}}
+            ],
+        }
+    ]
+
+
+def test_research_reports_each_status(client, core):
+    import json as _json
+
+    from fakes import findings_message
+
+    run_id = _start(client).json()["run_id"]
+    a, b, c = _research_run(core, run_id)
+    a.complete(findings_message(angle="community"))
+    b.fail()
+    c.never_claimed()
+
+    resp = client.get(f"/runs/{run_id}/research")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["run_id"] == run_id
+    by_status = {e["status"]: e for e in body["research"]}
+    assert len(body["research"]) == 3
+    assert by_status["succeeded"]["angle"] == "community"
+    assert by_status["succeeded"]["findings"][0]["signal"] == "community signal"
+    assert by_status["failed"]["findings"] == []
+    assert by_status["failed"]["angle"] == b.agent_name
+    assert by_status["never_started"]["findings"] == []
+
+    # Malformed: no call, then an invalid call.
+    b.complete([])
+    c.complete(_real_shape("submit_research_findings", _json.dumps({"findings": "nope"})))
+    statuses = [e["status"] for e in client.get(f"/runs/{run_id}/research").json()["research"]]
+    assert statuses == ["succeeded", "malformed", "malformed"]
+
+
+def test_research_is_404_for_another_founder_and_for_a_deleted_run(client, core):
+    run_id = _start(client).json()["run_id"]
+    assert client.post(f"/runs/{run_id}/delete").status_code == 204
+    assert client.get(f"/runs/{run_id}/research").status_code == 404
+
+    other = _start(client).json()["run_id"]
+    core.runs[other] = replace(core.runs[other], owner_sub="someone-else")
+    assert client.get(f"/runs/{other}/research").status_code == 404
