@@ -238,6 +238,110 @@ async def test_adapter_create_prd_writes_every_column_and_no_owner():
     }
 
 
+# ── Core's 16,000-character chat limit ───────────────────────────────────────
+
+
+def _full_size_candidate_inputs():
+    """A full-size candidate shaped like scout run 484baccb-… (7 candidates, 5
+    research angles of ~14 long findings each, profile, many sources). Built
+    synthetically: dev data cannot be captured from this sandbox."""
+    from idea_scout.models import Candidate, ScoutRun
+
+    candidate = Candidate(
+        id="c1",
+        run_id="r1",
+        rank=1,
+        title="Terms-Aware Invoice Reminder for QuickBooks Online",
+        pitch="Reminders that read each customer's payment terms. " * 8,
+        scorecard={"demand": 8, "feasibility": 7, "novelty": 6, "notes": "solid " * 40},
+        sources=[
+            {"url": f"https://example.com/source/{i}", "title": f"Source {i}", "note": "n" * 300}
+            for i in range(25)
+        ],
+    )
+    run = ScoutRun(
+        id="r1",
+        owner_sub=OWNER,
+        build_type="micro-saas",
+        complexity=3,
+        chain_id="ch",
+        status="complete",
+        profile_snapshot={"headline": "Fractional CTO", "bio": "b" * 3000},
+        business_model="subscription",
+    )
+    research = [
+        {
+            "angle": f"angle-{a}",
+            "status": "succeeded",
+            "findings": [
+                {"claim": f"finding {a}.{i} " + "x" * 700, "source": f"https://e.com/{a}/{i}"}
+                for i in range(14)
+            ],
+        }
+        for a in range(5)
+    ]
+    linked = {"report": {"text": "r" * 6000}, "research": {"text": "s" * 6000}}
+    return candidate, run, research, linked
+
+
+def test_full_size_dossier_fits_core_limit_and_keeps_the_essentials():
+    from idea_scout.service import CORE_CHAT_MESSAGE_LIMIT, _build_dossier
+
+    candidate, run, research, linked = _full_size_candidate_inputs()
+    unbounded = _build_dossier(candidate=candidate, run=run, research=research, linked=linked)
+    assert len(unbounded) > 16_000  # the bug's precondition
+
+    dossier = _build_dossier(
+        candidate=candidate,
+        run=run,
+        research=research,
+        linked=linked,
+        max_chars=CORE_CHAT_MESSAGE_LIMIT,
+    )
+    assert len(dossier) <= 16_000
+    assert dossier.startswith(PRD_DOSSIER_MARKER)
+    assert candidate.title in dossier
+    assert candidate.pitch in dossier
+    assert "## Scorecard" in dossier
+    assert '"demand": 8' in dossier
+    assert "## Research findings" in dossier
+    assert "angle-0" in dossier
+
+
+def test_opening_message_sent_to_core_is_within_the_limit(client, core, candidate_id):
+    cand = core.candidates[0]
+    core.candidates[0] = replace(cand, pitch=cand.pitch, sources=[{"u": "z" * 400}] * 60)
+    resp = client.post(f"/candidates/{candidate_id}/prd")
+    assert resp.status_code == 200
+    assert len(core.chat_turns[0]["message"]) <= 16_000
+
+
+def test_core_422_on_interview_start_is_a_clear_4xx(client, core, candidate_id, monkeypatch):
+    from idea_scout.adapter import CoreHttpError
+
+    async def reject(**_kwargs):
+        raise CoreHttpError("POST /agent-chat/x -> 422: string_too_long")
+
+    monkeypatch.setattr(core, "run_chat_turn", reject)
+    resp = client.post(f"/candidates/{candidate_id}/prd")
+    assert resp.status_code == 422
+    assert "could not be started" in resp.json()["detail"]
+
+
+def test_other_core_failure_on_interview_start_is_a_clear_502(
+    client, core, candidate_id, monkeypatch
+):
+    from idea_scout.adapter import CoreHttpError
+
+    async def boom(**_kwargs):
+        raise CoreHttpError("POST /agent-chat/x -> 500: boom")
+
+    monkeypatch.setattr(core, "run_chat_turn", boom)
+    resp = client.post(f"/candidates/{candidate_id}/prd")
+    assert resp.status_code == 502
+    assert "could not be started" in resp.json()["detail"]
+
+
 def test_full_size_dossier_fits_core_chat_message_limit(client, core, candidate_id):
     """Real research is large; Core rejects chat messages over 16,000 chars."""
     run = next(iter(core.runs.values()))
@@ -245,11 +349,11 @@ def test_full_size_dossier_fits_core_chat_message_limit(client, core, candidate_
         {"angle": "community", "signal": f"signal {i} " + "x" * 600, "evidence": "y" * 600}
         for i in range(80)
     ]
-    from idea_scout.service import CHAT_MESSAGE_MAX_CHARS, _build_dossier
+    from idea_scout.service import CORE_CHAT_MESSAGE_LIMIT, _build_dossier
 
     cand = core.candidates[0]
     text = _build_dossier(
-        candidate=cand, run=run, research=big, linked=None, max_chars=CHAT_MESSAGE_MAX_CHARS
+        candidate=cand, run=run, research=big, linked=None, max_chars=CORE_CHAT_MESSAGE_LIMIT
     )
     assert len(text) <= 16_000
     assert text.startswith(PRD_DOSSIER_MARKER)
