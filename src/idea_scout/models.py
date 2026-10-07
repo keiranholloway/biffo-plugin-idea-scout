@@ -210,6 +210,8 @@ class AgentRunView:
     model: str | None = None
     #: When a runtime claimed this run. None means nothing ever picked it up.
     started_at: str | None = None
+    #: The agent definition's name — the fallback label for a research angle.
+    agent_name: str | None = None
 
     @property
     def is_terminal(self) -> bool:

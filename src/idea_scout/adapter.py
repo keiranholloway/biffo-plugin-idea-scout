@@ -442,6 +442,7 @@ class CoreHttpGateway:
             messages=run.get("messages") or [],
             model=model,
             started_at=run.get("started_at"),
+            agent_name=run.get("agent_name"),
         )
 
     # ── Candidates ───────────────────────────────────────────────────────────

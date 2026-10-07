@@ -441,6 +441,40 @@ class IdeaScoutService:
         prds = await self._core.list_prds(owner_sub=owner_sub, run_id=run_id)
         return {p.candidate_id: p.status for p in prds}
 
+    async def get_research(self, *, owner_sub: str, run_id: str) -> list[dict[str, Any]]:
+        """The research agents' findings for a run, read back from Core on demand.
+
+        One entry per research run, ``{angle, status, findings[]}``, where status is
+        ``succeeded | failed | never_started | malformed``. A run that produced
+        nothing usable is returned with empty findings, never dropped. Public: the
+        PRD interview reuses it.
+        """
+        run = await self._load_owned(owner_sub=owner_sub, run_id=run_id)
+        entries: list[dict[str, Any]] = []
+        for rid in run.research_run_ids:
+            view = await self._core.get_agent_run(run_id=rid)
+            if view is None:
+                entries.append({"angle": rid, "status": "failed", "findings": []})
+                continue
+            fallback = view.agent_name or rid
+            if view.never_started:
+                entries.append({"angle": fallback, "status": "never_started", "findings": []})
+            elif not view.succeeded:
+                entries.append({"angle": fallback, "status": "failed", "findings": []})
+            else:
+                found = extract_findings(view.messages)  # type: ignore[arg-type]
+                if found is None:
+                    entries.append({"angle": fallback, "status": "malformed", "findings": []})
+                else:
+                    entries.append(
+                        {
+                            "angle": found.angle or fallback,
+                            "status": "succeeded",
+                            "findings": [f.model_dump(mode="json") for f in found.findings],
+                        }
+                    )
+        return entries
+
     async def delete_run(self, *, owner_sub: str, run_id: str) -> None:
         """Soft-delete, from any status — including in-flight. The agent runs are
         left alone: they are already paid for, and Core owns their lifecycle."""

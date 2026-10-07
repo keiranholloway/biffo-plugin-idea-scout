@@ -405,6 +405,7 @@ class FakeCoreGateway:
             messages=run.messages,
             model=run.model,
             started_at=run.started_at,
+            agent_name=run.agent_name,
         )
 
     # ── Candidates ───────────────────────────────────────────────────────────
