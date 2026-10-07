@@ -236,3 +236,24 @@ async def test_adapter_create_prd_writes_every_column_and_no_owner():
         "failure_reason": None,
         "deleted": False,
     }
+
+
+def test_full_size_dossier_fits_core_chat_message_limit(client, core, candidate_id):
+    """Real research is large; Core rejects chat messages over 16,000 chars."""
+    run = next(iter(core.runs.values()))
+    big = [
+        {"angle": "community", "signal": f"signal {i} " + "x" * 600, "evidence": "y" * 600}
+        for i in range(80)
+    ]
+    from idea_scout.service import CHAT_MESSAGE_MAX_CHARS, _build_dossier
+
+    cand = core.candidates[0]
+    text = _build_dossier(
+        candidate=cand, run=run, research=big, linked=None, max_chars=CHAT_MESSAGE_MAX_CHARS
+    )
+    assert len(text) <= 16_000
+    assert text.startswith(PRD_DOSSIER_MARKER)
+    assert cand.pitch in text
+    assert "Fractional CTO" in text
+    # Unbounded form (used by the compile run) is untouched and larger.
+    assert len(_build_dossier(candidate=cand, run=run, research=big)) > 16_000
