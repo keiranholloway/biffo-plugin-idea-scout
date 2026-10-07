@@ -209,3 +209,32 @@ class CoreGateway(Protocol):
     async def list_prds(self, *, owner_sub: str, run_id: str) -> list[PrdRecord]:
         """The live PRD rows for one run's candidates."""
         ...
+
+    async def get_prd(self, *, owner_sub: str, prd_id: str) -> PrdRecord | None:
+        """One PRD row by id, or ``None`` if there is none *or it belongs to
+        another founder* — Core's owner-data read 404s on another owner's row."""
+        ...
+
+    async def create_prd(
+        self, *, owner_sub: str, candidate_id: str, run_id: str, thread_id: str
+    ) -> PrdRecord:
+        """Insert a PRD row (``interviewing``, ``turn_count`` 0, not deleted).
+        Every column is written explicitly: declared defaults are not applied
+        by the generated migration."""
+        ...
+
+    async def update_prd(self, *, prd_id: str, **fields: Any) -> None:
+        """Patch a PRD row."""
+        ...
+
+    # ── Chat (the PRD interview) ─────────────────────────────────────────────
+
+    async def run_chat_turn(self, *, agent_name: str, thread_id: str, message: str) -> str:
+        """One buffered chat turn on a thread; returns the assistant's reply.
+        Core resolves the prompt and model from the registered chat agent."""
+        ...
+
+    async def read_thread_messages(self, *, thread_id: str) -> list[dict[str, Any]]:
+        """The thread's user/assistant messages, in order, as Core stores them
+        (``{role, content}``)."""
+        ...

@@ -50,6 +50,7 @@ _CANDIDATES = f"{_ROOT}/owner-data/idea_scout_candidates"
 _CADENCE = f"{_ROOT}/owner-data/idea_scout_cadence"
 _PRDS = f"{_ROOT}/owner-data/idea_scout_prds"
 _AGENT_RUNS = f"{_ROOT}/agent-runs"
+_AGENT_CHAT = f"{_ROOT}/agent-chat"
 _USER_PROFILE = f"{_ROOT}/user-profile/mine"
 _PLUGIN_CONFIG = f"{_ROOT}/plugins/me/config"
 # The manifest declares /build-types as a Core-generated CRUD route, so Core
@@ -506,3 +507,54 @@ class CoreHttpGateway:
         rows = await self._t.request("GET", _PRDS, params={"run_id": run_id})
         prds = (_prd_from_row(row) for row in rows or [])
         return [p for p in prds if p.run_id == run_id and not p.deleted]
+
+    async def get_prd(self, *, owner_sub: str, prd_id: str) -> PrdRecord | None:
+        # Core's owner-data read 404s on another owner's row: the ownership check.
+        try:
+            row = await self._t.request("GET", f"{_PRDS}/{prd_id}")
+        except CoreNotFoundError:
+            return None
+        prd = _prd_from_row(row)
+        return None if prd.deleted else prd
+
+    async def create_prd(
+        self, *, owner_sub: str, candidate_id: str, run_id: str, thread_id: str
+    ) -> PrdRecord:
+        # No owner in the body (Core stamps it). Every other column is explicit:
+        # the generated migration does not apply declared defaults.
+        row = await self._t.request(
+            "POST",
+            _PRDS,
+            json={
+                "candidate_id": candidate_id,
+                "run_id": run_id,
+                "status": "interviewing",
+                "thread_id": thread_id,
+                "turn_count": 0,
+                "compile_run_id": None,
+                "prd": None,
+                "failure_reason": None,
+                "deleted": False,
+            },
+        )
+        return _prd_from_row(row)
+
+    async def update_prd(self, *, prd_id: str, **fields: Any) -> None:
+        body = dict(fields)
+        if "prd" in body and body["prd"] is not None and not isinstance(body["prd"], str):
+            body["prd"] = json.dumps(body["prd"])
+        await self._t.request("PATCH", f"{_PRDS}/{prd_id}", json=body)
+
+    async def run_chat_turn(self, *, agent_name: str, thread_id: str, message: str) -> str:
+        # Prompt and model are the registered chat agent's (chat_agents_dynamic);
+        # this call carries neither.
+        resp = await self._t.request(
+            "POST",
+            f"{_AGENT_CHAT}/{agent_name}",
+            json={"message": message, "thread_id": thread_id},
+        )
+        return str(resp["reply"])
+
+    async def read_thread_messages(self, *, thread_id: str) -> list[dict[str, Any]]:
+        resp = await self._t.request("GET", f"{_AGENT_RUNS}/threads/{thread_id}/messages")
+        return [m for m in (resp or {}).get("messages", []) if isinstance(m, dict)]

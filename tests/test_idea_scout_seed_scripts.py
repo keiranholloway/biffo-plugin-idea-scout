@@ -9,6 +9,7 @@ from _scripts import load_script
 
 from idea_scout.definitions import (
     DEFAULT_INSTRUCTIONS,
+    PRD_INTERVIEWER_AGENT_NAME,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
 )
@@ -52,7 +53,7 @@ def test_keys_are_url_and_storage_safe():
 
 def test_a_row_is_seeded_for_every_agent_role():
     keys = {row["agent_key"] for row in payloads()}
-    assert keys == {*RESEARCH_AGENT_NAMES, SYNTHESIS_AGENT_NAME}
+    assert keys == {*RESEARCH_AGENT_NAMES, SYNTHESIS_AGENT_NAME, PRD_INTERVIEWER_AGENT_NAME}
 
 
 def test_the_seeded_prompt_is_exactly_the_built_in_default():

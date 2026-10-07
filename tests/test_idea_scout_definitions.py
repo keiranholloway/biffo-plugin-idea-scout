@@ -153,7 +153,11 @@ def test_three_research_angles_each_have_a_default_prompt():
 
 
 def test_every_agent_role_has_a_default_prompt_and_vice_versa():
-    assert set(d.DEFAULT_INSTRUCTIONS) == {*d.RESEARCH_AGENT_NAMES, d.SYNTHESIS_AGENT_NAME}
+    assert set(d.DEFAULT_INSTRUCTIONS) == {
+        *d.RESEARCH_AGENT_NAMES,
+        d.SYNTHESIS_AGENT_NAME,
+        d.PRD_INTERVIEWER_AGENT_NAME,
+    }
 
 
 def test_research_prompts_ask_for_the_findings_tool_and_synthesis_for_candidates():
@@ -188,7 +192,7 @@ def test_synthesis_prompt_states_the_candidate_range():
 
 
 def test_agent_names_are_distinct_and_namespaced():
-    names = [*d.RESEARCH_AGENT_NAMES, d.SYNTHESIS_AGENT_NAME]
+    names = [*d.RESEARCH_AGENT_NAMES, d.SYNTHESIS_AGENT_NAME, d.PRD_INTERVIEWER_AGENT_NAME]
     assert len(set(names)) == len(names)
     assert all(name.startswith("idea-scout-") for name in names)
 
