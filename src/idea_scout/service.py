@@ -33,6 +33,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from .adapter import CoreHttpError
 from .definitions import (
     CANDIDATES_TOOL_NAME,
     DEFAULT_CADENCE_DAYS,
@@ -107,6 +108,25 @@ class PrdTurnLimitError(IdeaScoutError):
 
     def __init__(self, prd_id: str) -> None:
         super().__init__(f"PRD {prd_id} has reached the {PRD_MAX_TURNS}-turn limit.")
+
+
+class PrdStartRejectedError(IdeaScoutError):
+    """Core refused the interview's opening message (HTTP 422)."""
+
+    def __init__(self, prd_id: str, detail: str) -> None:
+        super().__init__(
+            f"The PRD interview could not be started: Core rejected the opening message "
+            f"({detail}). Try again; if it keeps failing, report PRD {prd_id}."
+        )
+
+
+class PrdStartFailedError(IdeaScoutError):
+    """The interview's opening turn failed upstream (HTTP 502)."""
+
+    def __init__(self, prd_id: str) -> None:
+        super().__init__(
+            f"The PRD interview could not be started right now (PRD {prd_id}). Try again shortly."
+        )
 
 
 class PrdDraftingError(IdeaScoutError):
@@ -866,11 +886,23 @@ class IdeaScoutService:
         run = await self._load_owned(owner_sub=owner_sub, run_id=candidate.run_id)
         research = await self.get_research(owner_sub=owner_sub, run_id=run.id)
         linked = await self._linked_ideation(owner_sub=owner_sub, candidate_id=candidate.id)
-        dossier = _build_dossier(candidate=candidate, run=run, research=research, linked=linked)
-        assert prd.thread_id is not None
-        await self._core.run_chat_turn(
-            agent_name=PRD_INTERVIEWER_AGENT_NAME, thread_id=prd.thread_id, message=dossier
+        dossier = _build_dossier(
+            candidate=candidate,
+            run=run,
+            research=research,
+            linked=linked,
+            max_chars=CORE_CHAT_MESSAGE_LIMIT,
         )
+        assert prd.thread_id is not None
+        try:
+            await self._core.run_chat_turn(
+                agent_name=PRD_INTERVIEWER_AGENT_NAME, thread_id=prd.thread_id, message=dossier
+            )
+        except CoreHttpError as exc:
+            _LOGGER.warning("PRD interview start failed for %s: %s", prd.id, exc)
+            if "422" in str(exc):
+                raise PrdStartRejectedError(prd.id, "HTTP 422") from exc
+            raise PrdStartFailedError(prd.id) from exc
         await self._core.update_prd(prd_id=prd.id, turn_count=1)
         return replace(prd, turn_count=1)
 
@@ -1062,17 +1094,48 @@ class IdeaScoutService:
         return brief
 
 
+# Core rejects an agent-chat message longer than this (422 string_too_long).
+CORE_CHAT_MESSAGE_LIMIT = 16_000
+_SHRINK_STEPS = ((2000, 20), (800, 10), (400, 5), (200, 3), (100, 2), (50, 1))
+
+
+def _shrink(value: Any, str_cap: int, list_cap: int) -> Any:
+    """``value`` with every string and list cut down to the given caps."""
+    if isinstance(value, str):
+        return value if len(value) <= str_cap else value[:str_cap] + "…"
+    if isinstance(value, list):
+        return [_shrink(v, str_cap, list_cap) for v in value[:list_cap]]
+    if isinstance(value, dict):
+        return {k: _shrink(v, str_cap, list_cap) for k, v in value.items()}
+    return value
+
+
+def _fit_block(value: Any, budget: int) -> str | None:
+    """Indented JSON of ``value`` within ``budget`` characters, shrinking it
+    progressively; ``None`` if even the smallest form does not fit."""
+    for str_cap, list_cap in ((None, None), *_SHRINK_STEPS):
+        shrunk = value if str_cap is None or list_cap is None else _shrink(value, str_cap, list_cap)
+        text = json.dumps(shrunk, indent=2, ensure_ascii=False)
+        if len(text) <= budget:
+            return text
+    return None
+
+
 def _build_dossier(
     *,
     candidate: Candidate,
     run: ScoutRun,
     research: list[dict[str, Any]],
     linked: dict[str, Any] | None = None,
+    max_chars: int | None = None,
 ) -> str:
     """The opening user turn of a PRD interview.
 
     Plugins cannot inject chat context into Core, so everything the interviewer
-    must already know rides in this first message.
+    must already know rides in this first message. With ``max_chars`` the result
+    never exceeds it: the title, pitch and scorecard are kept, then sources,
+    research, profile and linked sections are added in that order, each shrunk
+    to the room left (keeping the first findings per list) or dropped.
     """
 
     def block(value: Any) -> str:
@@ -1085,15 +1148,41 @@ def _build_dossier(
         f"Business model: {run.business_model or 'no preference'}",
         f"## Pitch\n{candidate.pitch}",
         f"## Scorecard\n{block(candidate.scorecard)}",
-        f"## Sources\n{block(candidate.sources)}",
-        f"## Research findings\n{block(research)}",
-        f"## Founder profile\n{block(run.profile_snapshot or {})}",
     ]
+    if max_chars is None:
+        sections.append(f"## Sources\n{block(candidate.sources)}")
+        sections.append(f"## Research findings\n{block(research)}")
+        sections.append(f"## Founder profile\n{block(run.profile_snapshot or {})}")
+        if linked and linked.get("report"):
+            sections.append(f"## Pressure Test report\n{block(linked['report'])}")
+        if linked and linked.get("research"):
+            sections.append(f"## Brain-Storm research\n{block(linked['research'])}")
+        return "\n\n".join(sections)
+
+    # Title, pitch and scorecard are the interviewer's minimum; cap them so
+    # they cannot overflow on their own.
+    sections[2] = sections[2][:1500]
+    sections[3] = sections[3][:3000]
+    sections[4] = sections[4][:3000]
+    used = sum(len(h) + 2 for h in sections)
+
+    def add(title: str, value: Any, reserve: int) -> None:
+        nonlocal used
+        prefix = f"## {title}\n"
+        text = _fit_block(value, max_chars - used - reserve - len(prefix) - 2)
+        if text is None:
+            return
+        sections.append(prefix + text)
+        used += len(prefix) + len(text) + 2
+
+    add("Sources", candidate.sources, reserve=9000)
+    add("Research findings", research, reserve=2500)
+    add("Founder profile", run.profile_snapshot or {}, reserve=1500)
     if linked and linked.get("report"):
-        sections.append(f"## Pressure Test report\n{block(linked['report'])}")
+        add("Pressure Test report", linked["report"], reserve=800)
     if linked and linked.get("research"):
-        sections.append(f"## Brain-Storm research\n{block(linked['research'])}")
-    return "\n\n".join(sections)
+        add("Brain-Storm research", linked["research"], reserve=0)
+    return "\n\n".join(sections)[:max_chars]
 
 
 def _parse_timestamp(value: str | None) -> datetime | None:
