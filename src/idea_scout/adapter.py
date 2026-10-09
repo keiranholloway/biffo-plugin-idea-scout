@@ -49,9 +49,14 @@ _RUNS = f"{_ROOT}/owner-data/idea_scout_runs"
 _CANDIDATES = f"{_ROOT}/owner-data/idea_scout_candidates"
 _CADENCE = f"{_ROOT}/owner-data/idea_scout_cadence"
 _PRDS = f"{_ROOT}/owner-data/idea_scout_prds"
-# Ideation's owner-scoped read of what it holds for a candidate (#180). Reached
-# under the explicit read grant; Core scopes it to the forwarded founder.
-_LINKED_IDEATION = f"{_ROOT}/plugins/ideation/linked-ideas"
+# Ideation's own owner-scoped tables, read under the grant Ideation's manifest
+# gives ``system:idea-scout`` in ``owner_scoped_service.allowed_principals``
+# (#180). Ideation's ``GET /linked/{candidate_id}`` is a route on its own app,
+# not a Core-mounted one, so Idea Scout cannot reach it; the grant is on the rows.
+_IDEATION_SESSIONS = f"{_ROOT}/owner-data/ideation_sessions"
+_IDEATION_REPORTS = f"{_ROOT}/owner-data/ideation_reports"
+_IDEATION_BRAINSTORMS = f"{_ROOT}/owner-data/brainstorm_sessions"
+_IDEATION_OPPORTUNITIES = f"{_ROOT}/owner-data/brainstorm_opportunities"
 _AGENT_RUNS = f"{_ROOT}/agent-runs"
 _AGENT_CHAT = f"{_ROOT}/agent-chat"
 _USER_PROFILE = f"{_ROOT}/user-profile/mine"
@@ -501,17 +506,90 @@ class CoreHttpGateway:
     async def get_linked_ideation(
         self, *, owner_sub: str, candidate_id: str
     ) -> dict[str, Any] | None:
-        # Best-effort: no grant (403), nothing linked (404), or any Ideation
-        # failure must leave the PRD unblocked, so every error is "no section".
+        # Best-effort: no grant (403), nothing linked, or any Ideation failure
+        # must leave the PRD unblocked, so every error is "no section".
         try:
-            body = await self._t.request(
-                "GET", _LINKED_IDEATION, params={"source_candidate_id": candidate_id}
-            )
+            return await self._read_linked_ideation(owner_sub, candidate_id)
         except Exception:
             return None
-        if not isinstance(body, dict):
-            return None
-        linked = {k: body[k] for k in ("report", "research") if body.get(k)}
+
+    async def _read_linked_ideation(
+        self, owner_sub: str, candidate_id: str
+    ) -> dict[str, Any] | None:
+        link = {"source_candidate_id": candidate_id}
+
+        def mine(rows: Any) -> list[dict[str, Any]]:
+            # Core scopes these lists to the forwarded founder; this is the
+            # adapter's own second lock, so a row that is not the caller's or
+            # not linked to this candidate is dropped whatever Core returned.
+            if not isinstance(rows, list):
+                return []
+            return [
+                r
+                for r in rows
+                if isinstance(r, dict)
+                and r.get("owner_sub") == owner_sub
+                and r.get("source_candidate_id") == candidate_id
+                and not r.get("deleted")
+            ]
+
+        def latest(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+            return max(rows, key=lambda r: str(r.get("created_at") or "")) if rows else None
+
+        linked: dict[str, Any] = {}
+
+        sessions = mine(await self._t.request("GET", _IDEATION_SESSIONS, params=link))
+        session = latest([r for r in sessions if r.get("status") == "complete"])
+        if session is not None:
+            reports = await self._t.request(
+                "GET", _IDEATION_REPORTS, params={"session_id": session["id"]}
+            )
+            row = next(
+                (
+                    r
+                    for r in (reports if isinstance(reports, list) else [])
+                    if isinstance(r, dict) and r.get("owner_sub") == owner_sub
+                ),
+                None,
+            )
+            if row is not None:
+                report = {
+                    "title": session.get("title") or session.get("seed_idea"),
+                    "scorecard": _load_json(row.get("scorecard"), default=None),
+                    "thin_prd": _load_json(row.get("prd"), default=None),
+                }
+                if report["scorecard"] or report["thin_prd"]:
+                    linked["report"] = report
+
+        brainstorm = latest(mine(await self._t.request("GET", _IDEATION_BRAINSTORMS, params=link)))
+        if brainstorm is not None:
+            opps = await self._t.request(
+                "GET", _IDEATION_OPPORTUNITIES, params={"session_id": brainstorm["id"]}
+            )
+            opportunities = [
+                {
+                    "title": o.get("title"),
+                    "pitch": o.get("pitch"),
+                    "rationale": o.get("rationale"),
+                }
+                for o in sorted(
+                    (
+                        o
+                        for o in (opps if isinstance(opps, list) else [])
+                        if isinstance(o, dict) and o.get("owner_sub") == owner_sub
+                    ),
+                    key=lambda o: o.get("rank") or 0,
+                )
+            ]
+            research = {
+                "title": brainstorm.get("title"),
+                "problem": brainstorm.get("problem"),
+                "findings": _load_json(brainstorm.get("research_findings"), default=None),
+                "opportunities": opportunities,
+            }
+            if research["findings"] or opportunities:
+                linked["research"] = research
+
         return linked or None
 
     # ── PRDs ─────────────────────────────────────────────────────────────────
