@@ -1,0 +1,17 @@
+{
+  "_provenance": "Row shapes from keiranholloway/biffo-plugin-ideation biffo.plugin.json (tables ideation_sessions, ideation_reports, brainstorm_sessions, brainstorm_opportunities; JSON columns are Text) and its src/ideation/adapter.py row mappers. Values are synthetic.",
+  "ideation_sessions": [
+    {"id": "s1", "owner_sub": "alice", "title": "Pressure test", "seed_idea": "an idea", "status": "complete", "thread_id": "t1", "turn_count": 4, "deleted": false, "source_candidate_id": "cand-1", "created_at": "2026-10-07T10:00:00Z"},
+    {"id": "s2", "owner_sub": "alice", "title": "Unfinished", "seed_idea": "an idea", "status": "gathering", "thread_id": "t2", "turn_count": 1, "deleted": false, "source_candidate_id": "cand-1", "created_at": "2026-10-08T10:00:00Z"}
+  ],
+  "ideation_reports": [
+    {"id": "r1", "owner_sub": "alice", "session_id": "s1", "prd": "{\"problem\": \"PRESSURE-THIN-PRD-MARK\"}", "scorecard": "{\"summary\": \"s\"}", "model": "m"}
+  ],
+  "brainstorm_sessions": [
+    {"id": "b1", "owner_sub": "alice", "title": "Brain", "problem": "p", "status": "complete", "deleted": false, "source_candidate_id": "cand-1", "research_findings": "[{\"angle\": \"market\", \"status\": \"succeeded\", \"findings\": [\"BRAINSTORM-RESEARCH-MARK\"]}]", "created_at": "2026-10-07T11:00:00Z"}
+  ],
+  "brainstorm_opportunities": [
+    {"id": "o2", "owner_sub": "alice", "session_id": "b1", "rank": 2, "title": "Second", "pitch": "p2", "rationale": "r2", "evidence": "[]", "model": "m"},
+    {"id": "o1", "owner_sub": "alice", "session_id": "b1", "rank": 1, "title": "First", "pitch": "p1", "rationale": "r1", "evidence": "[]", "model": "m"}
+  ]
+}

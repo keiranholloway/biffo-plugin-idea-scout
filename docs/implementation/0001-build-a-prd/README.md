@@ -7,7 +7,7 @@ The owner wants every Idea Scout candidate to offer a **"Build a PRD"** action. 
 Owner decisions (2026-10-07):
 - **Idea Scout owns the PRD.** It lives in an Idea Scout table. Ideation's Pressure Test keeps its own thin PRD unchanged.
 - **Inputs:** the candidate (title, pitch, scorecard, sources), the run's raw research findings, and the founder profile snapshot.
-- **Linked Pressure Test / Brain-Storm content is deferred** to a follow-up. ADR-0017 §5 says no plugin may read another plugin's tables, and nothing links an Ideation session to a candidate today.
+- **Linked Pressure Test / Brain-Storm content is in the dossier** (#180). Ideation records `source_candidate_id` on its sessions and grants `system:idea-scout` read on its owner-scoped tables (`ideation_sessions`, `ideation_reports`, `brainstorm_sessions`, `brainstorm_opportunities`). The adapter reads those rows, keeps only the caller's own, and drops the section on any error or missing grant, so the PRD is never blocked. Idea Scout's manifest declares nothing: the grant lives in Ideation's.
 - **Handoff is a markdown export** in the estate's PRD format. The skills already accept a local PRD file.
 - **Scope is the PRD only, as an epic.** "New Biffo instance from a PRD" is a separate follow-up issue.
 - **Core chat defect:** tracked as a biffo-template bug ([issue 2408](https://github.com/keiranholloway/biffo-template/issues/2408)). The interview milestone depends on it.
@@ -25,7 +25,6 @@ Owner decisions (2026-10-07):
 In scope: research-findings read, PRD storage and export, the drafting agent with interview and compile, and the founder UI. All of it is in `biffo-plugin-idea-scout`.
 
 Deferred, each tracked as its own issue:
-- **Linked Pressure Test / Brain-Storm input.** Needs an ADR-0017 §5 decision first, a source-candidate link in Ideation, and an answer on Ideation being admin-only while Idea Scout is founder-only.
 - **New Biffo instance from a stored PRD.** A skill in `biffo-agent-config`. No skill wraps `biffo init` today.
 - **Direct editing of PRD sections in the UI.** v1 revises through the chat followed by Update draft.
 
