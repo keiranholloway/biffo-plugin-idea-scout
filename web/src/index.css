@@ -713,3 +713,14 @@ a {
 .prd-compose-hint { margin: 0; font-size: 0.8rem; color: var(--text-muted); }
 .prd-compose-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .candidate-prd { font-weight: 600; }
+
+.prd-draft-panel { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.prd-draft-title { margin: 0; }
+.prd-draft-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.prd-final { color: var(--state-positive); font-weight: 600; margin: 0; }
+.prd-draft { display: flex; flex-direction: column; gap: 0.5rem; }
+.prd-section { border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.85rem; background: var(--surface); }
+.prd-section-title { margin: 0 0 0.3rem; }
+.prd-item { margin-bottom: 0.5rem; }
+.prd-list { margin: 0.2rem 0; padding-left: 1.2rem; }
+.prd-text { margin: 0.2rem 0; white-space: pre-wrap; }

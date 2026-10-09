@@ -177,6 +177,48 @@ export interface PrdSession extends PrdState {
   messages: PrdMessage[]
 }
 
+/** GET /prds/{id} and the draft/finalise responses: the stored row. `prd` is
+ * the structured draft (`ProductRequirements`), kept across a failed redraft. */
+export interface PrdFull {
+  id: string
+  candidate_id: string
+  run_id: string
+  status: PrdStatus
+  thread_id: string | null
+  turn_count: number
+  compile_run_id: string | null
+  prd: PrdDocument | null
+  failure_reason: string | null
+}
+
+export interface PrdDocument {
+  title: string
+  summary?: string
+  problem?: string
+  goals?: string[]
+  non_goals?: string[]
+  personas?: { name: string; description?: string; needs?: string[] }[]
+  core_concepts?: { name: string; description?: string }[]
+  user_stories?: {
+    id: string
+    title: string
+    as_a: string
+    i_want: string
+    so_that: string
+    acceptance_criteria?: string[]
+  }[]
+  functional_requirements?: { id: string; area: string; requirement: string }[]
+  ux_surfaces?: { name: string; purpose?: string; key_elements?: string[] }[]
+  permissions?: { role: string; allowed?: string[]; denied?: string[] }[]
+  data_model?: { entity: string; fields?: string[]; relationships?: string[]; notes?: string }[]
+  api_expectations?: string[]
+  events_and_audit?: string[]
+  success_metrics?: string[]
+  edge_cases?: string[]
+  open_questions?: string[]
+  sources?: { url: string; note: string }[]
+}
+
 export interface PrdReply extends PrdState {
   reply: string
 }
@@ -263,6 +305,27 @@ export function createApi(getIdToken: () => string | null | Promise<string | nul
       request<PrdSession>('POST', `/candidates/${candidateId}/prd`),
     sendPrdMessage: (prdId: string, message: string) =>
       request<PrdReply>('POST', `/prds/${prdId}/messages`, { message }),
+    getPrd: (prdId: string) => request<PrdFull>('GET', `/prds/${prdId}`),
+    draftPrd: (prdId: string) => request<PrdFull>('POST', `/prds/${prdId}/draft`),
+    finalisePrd: (prdId: string) => request<PrdFull>('POST', `/prds/${prdId}/finalise`),
+    // The download needs the founder's bearer token, which a plain <a href>
+    // cannot send, so fetch the file as a blob and let the caller save it.
+    downloadPrdMarkdown: async (
+      candidateId: string,
+    ): Promise<{ blob: Blob; filename: string }> => {
+      const token = await getIdToken()
+      const res = await fetch(`${API_BASE}/candidates/${candidateId}/prd.md`, {
+        method: 'GET',
+        headers: token != null ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) {
+        const detail = await res.text().catch(() => res.statusText)
+        throw new ApiError(res.status, detail)
+      }
+      const disposition = res.headers.get('Content-Disposition') ?? ''
+      const match = /filename="?([^";]+)"?/.exec(disposition)
+      return { blob: await res.blob(), filename: match?.[1] ?? 'prd.md' }
+    },
     getPrdMessages: (prdId: string) =>
       request<{ prd_id: string; messages: PrdMessage[] }>('GET', `/prds/${prdId}/messages`),
   }

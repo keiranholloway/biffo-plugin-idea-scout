@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const startPrd = vi.fn();
 const sendPrdMessage = vi.fn();
 const getCandidates = vi.fn();
+const getPrd = vi.fn();
 
 vi.mock("./lib/auth", () => ({
   getCurrentSession: () =>
@@ -49,6 +50,7 @@ vi.mock("./lib/api", async (importOriginal) => {
       getLastUsedModel: () => Promise.resolve(null),
       getCandidates,
       startPrd,
+      getPrd,
       sendPrdMessage,
       getCadence: vi.fn(),
     }),
@@ -90,6 +92,13 @@ describe("PRD view", () => {
     startPrd.mockReset();
     sendPrdMessage.mockReset();
     getCandidates.mockReset();
+    getPrd.mockReset();
+    // The stored row mirrors whatever state the start call returned.
+    getPrd.mockImplementation(async () => {
+      const state = { ...(await startPrd.mock.results[0].value) };
+      delete state.messages;
+      return { ...state, compile_run_id: null, prd: null, failure_reason: null };
+    });
   });
 
   it("starts a PRD: POST, then the view opens with the first reply", async () => {
