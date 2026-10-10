@@ -819,8 +819,17 @@ class IdeaScoutService:
         run = await self._load_owned(owner_sub=owner_sub, run_id=candidate.run_id)
         research = await self.get_research(owner_sub=owner_sub, run_id=run.id)
         linked = await self._linked_ideation(owner_sub=owner_sub, candidate_id=candidate.id)
-        dossier = _build_dossier(candidate=candidate, run=run, research=research, linked=linked)
-        conversation = await self.get_prd_messages(owner_sub=owner_sub, prd_id=prd_id)
+        dossier = _build_dossier(
+            candidate=candidate,
+            run=run,
+            research=research,
+            linked=linked,
+            max_chars=COMPILE_DOSSIER_MAX_CHARS,
+        )
+        conversation = [
+            {**m, "content": str(m["content"])[:COMPILE_MESSAGE_MAX_CHARS]}
+            for m in await self.get_prd_messages(owner_sub=owner_sub, prd_id=prd_id)
+        ]
         instructions, model = await self._resolve_agent(
             PRD_WRITER_AGENT_NAME, DEFAULT_PRD_WRITER_MODEL
         )
@@ -1096,6 +1105,10 @@ class IdeaScoutService:
 
 # Core rejects an agent-chat message longer than this (422 string_too_long).
 CORE_CHAT_MESSAGE_LIMIT = 16_000
+# The writer run is not bound by Core's chat limit, but an unbounded dossier
+# made it exceed its timeout on dev; keep its input small enough to finish.
+COMPILE_DOSSIER_MAX_CHARS = 24_000
+COMPILE_MESSAGE_MAX_CHARS = 2_500
 _SHRINK_STEPS = ((2000, 20), (800, 10), (400, 5), (200, 3), (100, 2), (50, 1))
 
 

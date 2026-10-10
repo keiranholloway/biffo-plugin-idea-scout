@@ -317,7 +317,7 @@ def builtin_agents() -> dict:
                 "active": True,
                 "max_history_messages": 10,
                 "max_output_tokens": 8000,
-                "timeout_seconds": 120,
+                "timeout_seconds": 240,
             },
         ]
     }
