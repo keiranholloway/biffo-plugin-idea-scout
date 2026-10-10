@@ -291,3 +291,18 @@ def test_another_founder_gets_404_on_the_new_routes(client, core, ids):
     assert other.post(f"/prds/{pid}/finalise").status_code == 404
     assert other.get(f"/prds/{pid}").status_code == 404
     assert not [r for r in core.agent_runs.values() if r.agent_name == PRD_WRITER_AGENT_NAME]
+
+
+def test_compile_input_is_size_bounded_for_a_full_size_dossier(client, core, ids):
+    from dataclasses import replace
+
+    from idea_scout.service import COMPILE_DOSSIER_MAX_CHARS, COMPILE_MESSAGE_MAX_CHARS
+
+    cid, pid = ids
+    core.candidates[0] = replace(core.candidates[0], sources=[{"u": "z" * 400}] * 200)
+    client.post(f"/prds/{pid}/messages", json={"message": "long answer " + "w" * 9000})
+    assert client.post(f"/prds/{pid}/draft").status_code == 200
+    payload = core.requested[-1]["input_payload"]
+    assert len(payload["dossier"]) <= COMPILE_DOSSIER_MAX_CHARS
+    assert core.candidates[0].title in payload["dossier"]
+    assert all(len(m["content"]) <= COMPILE_MESSAGE_MAX_CHARS for m in payload["conversation"])
