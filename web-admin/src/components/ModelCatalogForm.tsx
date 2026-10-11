@@ -30,7 +30,7 @@ export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
 
   return (
     <div className="admin-form-container">
-      <button onClick={() => setShowForm(!showForm)} className="admin-btn-primary">
+      <button onClick={() => setShowForm(!showForm)} className="biffo-btn-primary">
         {showForm ? 'Cancel' : 'Add Model'}
       </button>
 
@@ -85,7 +85,7 @@ export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
             Web Capable (supports :online suffix)
           </label>
 
-          <button type="submit" className="admin-btn-primary">
+          <button type="submit" className="biffo-btn-primary">
             Create Model
           </button>
         </form>

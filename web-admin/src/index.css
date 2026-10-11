@@ -2,6 +2,7 @@
    panel does not become a third brand blue (the drift @biffo/design-tokens was
    created to end). */
 @import '@biffo/design-tokens/tokens.css';
+@import '@biffo/design-tokens/kit.css';
 
 * {
   box-sizing: border-box;
@@ -9,20 +10,13 @@
 
 body {
   margin: 0;
-  font-family: var(--font-sans, system-ui, sans-serif);
-  color: var(--text, #1b1c1f);
-  background: var(--bg, #f7f8fa);
+  /* font, colour and background come from the kit's .biffo-kit (set on <body>) */
 }
 
 .page {
-  max-width: 60rem;
+  max-width: 80rem;
   margin: 0 auto;
   padding: 2rem 1.5rem 4rem;
-}
-
-h1 {
-  font-size: 1.55rem;
-  margin: 0 0 0.35rem;
 }
 
 h2 {
@@ -94,23 +88,6 @@ h2 {
   font-size: 0.82rem;
   margin-top: 0.15rem;
   max-width: 32rem;
-}
-
-.type-status {
-  font-size: 0.68rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  background: var(--bg-subtle, #eef0f4);
-  color: var(--text-muted, #5b6070);
-  white-space: nowrap;
-}
-
-.type-status[data-active='yes'] {
-  background: var(--state-positive-soft, #e6f4ee);
-  color: var(--state-positive, #1f6b4d);
 }
 
 .type-actions {
@@ -204,12 +181,6 @@ button {
 button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
-}
-
-.primary {
-  background: var(--brand, #4f46e5);
-  border-color: var(--brand, #4f46e5);
-  color: #fff;
 }
 
 /* ── admin tabs ───────────────────────────────────────────────────────────── */
@@ -324,9 +295,7 @@ button:disabled {
   margin-top: 1rem;
 }
 
-.admin-btn-primary,
-.admin-btn-secondary,
-.admin-btn-danger {
+.admin-btn-secondary {
   padding: 0.42rem 0.8rem;
   border-radius: 6px;
   border: 1px solid var(--border, #cfd3dc);
@@ -338,21 +307,6 @@ button:disabled {
   transition: all 0.2s ease;
 }
 
-.admin-btn-primary {
-  background: var(--brand, #4f46e5);
-  border-color: var(--brand, #4f46e5);
-  color: #fff;
-}
-
-.admin-btn-primary:hover {
-  opacity: 0.9;
-}
-
-.admin-btn-primary:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-
 .admin-btn-secondary {
   background: var(--bg-subtle, #eef0f4);
   border-color: var(--border-subtle, #e5e7eb);
@@ -361,17 +315,6 @@ button:disabled {
 
 .admin-btn-secondary:hover {
   background: var(--border-subtle, #e5e7eb);
-}
-
-.admin-btn-danger {
-  background: var(--state-negative-soft, #fdeaea);
-  border-color: var(--state-negative, #8c2b2b);
-  color: var(--state-negative, #8c2b2b);
-}
-
-.admin-btn-danger:hover {
-  background: var(--state-negative, #8c2b2b);
-  color: #fff;
 }
 
 /* ── admin list ──────────────────────────────────────────────────────────── */
@@ -419,11 +362,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-.admin-list-actions button {
-  font-size: 0.8rem;
-  padding: 0.35rem 0.65rem;
-}
-
 /* ── admin edit form ─────────────────────────────────────────────────────── */
 
 .admin-edit-form {
@@ -461,8 +399,6 @@ button:disabled {
 
 /* ── badges ───────────────────────────────────────────────────────────────── */
 
-.badge-active,
-.badge-inactive,
 .badge-default,
 .badge-not-default,
 .badge-web-capable,
@@ -474,16 +410,6 @@ button:disabled {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.02em;
-}
-
-.badge-active {
-  background: var(--state-positive-soft, #e6f4ee);
-  color: var(--state-positive, #1f6b4d);
-}
-
-.badge-inactive {
-  background: var(--state-negative-soft, #fdeaea);
-  color: var(--state-negative, #8c2b2b);
 }
 
 .badge-default {

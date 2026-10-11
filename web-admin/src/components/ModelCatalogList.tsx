@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { statusBadgeClass, statusLabel } from '@biffo/design-tokens/status.mjs'
 import type { ModelCatalogEntry } from '../lib/api'
+import { ConfirmDelete } from './ConfirmDelete'
 
 interface ModelCatalogListProps {
   entries: ModelCatalogEntry[]
@@ -12,6 +14,7 @@ const EDITABLE_FIELDS = ['model_id', 'label', 'active', 'is_default', 'web_capab
 export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<ModelCatalogEntry>>({})
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   function handleEdit(entry: ModelCatalogEntry) {
     setEditingId(entry.id)
@@ -114,7 +117,7 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
               </label>
 
               <div className="admin-form-actions">
-                <button onClick={handleSaveEdit} className="admin-btn-primary">
+                <button onClick={handleSaveEdit} className="biffo-btn-primary">
                   Save
                 </button>
                 <button onClick={handleCancel} className="admin-btn-secondary">
@@ -132,8 +135,8 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
               </p>
               <p>
                 <strong>Status:</strong>{' '}
-                <span className={entry.active ? 'badge-active' : 'badge-inactive'}>
-                  {entry.active ? 'Active' : 'Inactive'}
+                <span className={statusBadgeClass(entry.active ? 'active' : 'inactive')}>
+                  {statusLabel(entry.active ? 'active' : 'inactive')}
                 </span>
               </p>
               <p>
@@ -153,9 +156,20 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
               <button onClick={() => handleEdit(entry)} className="admin-btn-secondary">
                 Edit
               </button>
-              <button onClick={() => onDelete(entry.id)} className="admin-btn-danger">
-                Delete
-              </button>
+              {confirmingId === entry.id ? (
+                <ConfirmDelete
+                  prompt="Delete this model?"
+                  onConfirm={() => {
+                    setConfirmingId(null)
+                    onDelete(entry.id)
+                  }}
+                  onCancel={() => setConfirmingId(null)}
+                />
+              ) : (
+                <button onClick={() => setConfirmingId(entry.id)} className="biffo-btn-delete">
+                  Delete
+                </button>
+              )}
             </div>
           </div>
         ),

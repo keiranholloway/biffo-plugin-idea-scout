@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { statusBadgeClass, statusLabel } from '@biffo/design-tokens/status.mjs'
 import type { ChatAgent } from '../lib/api'
+import { ConfirmDelete } from './ConfirmDelete'
 
 type Row =
   | { kind: 'stored'; agent: ChatAgent }
@@ -56,6 +58,7 @@ export function AgentList({
 }: AgentListProps) {
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<ChatAgent>>({})
+  const [confirmingKey, setConfirmingKey] = useState<string | null>(null)
 
   function handleEdit(agent: ChatAgent) {
     setEditingKey(agent.agent_key)
@@ -191,7 +194,7 @@ export function AgentList({
                   </label>
 
                   <div className="admin-form-actions">
-                    <button onClick={handleSaveEdit} className="admin-btn-primary" disabled={busy}>
+                    <button onClick={handleSaveEdit} className="biffo-btn-primary" disabled={busy}>
                       Save
                     </button>
                     <button onClick={handleCancel} className="admin-btn-secondary" disabled={busy}>
@@ -218,8 +221,8 @@ export function AgentList({
                     </p>
                     <p>
                       <strong>Status:</strong>{' '}
-                      <span className={row.agent.active ? 'badge-active' : 'badge-inactive'}>
-                        {row.agent.active ? 'Active' : 'Inactive'}
+                      <span className={statusBadgeClass(row.agent.active ? 'active' : 'inactive')}>
+                        {statusLabel(row.agent.active ? 'active' : 'inactive')}
                       </span>
                     </p>
                     <details>
@@ -237,13 +240,25 @@ export function AgentList({
                     >
                       Edit
                     </button>
-                    <button
-                      onClick={() => onDelete(row.agent.agent_key)}
-                      className="admin-btn-danger"
-                      disabled={busy}
-                    >
-                      Delete
-                    </button>
+                    {confirmingKey === row.agent.agent_key ? (
+                      <ConfirmDelete
+                        prompt="Delete this agent?"
+                        disabled={busy}
+                        onConfirm={() => {
+                          setConfirmingKey(null)
+                          onDelete(row.agent.agent_key)
+                        }}
+                        onCancel={() => setConfirmingKey(null)}
+                      />
+                    ) : (
+                      <button
+                        onClick={() => setConfirmingKey(row.agent.agent_key)}
+                        className="biffo-btn-delete"
+                        disabled={busy}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </>
               )}
