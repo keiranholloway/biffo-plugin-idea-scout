@@ -338,12 +338,21 @@ export default function App() {
     }
   }
 
+  async function clearOtherDefaults(keepId: string | undefined) {
+    const others = models.filter((m) => m.is_default && m.id !== keepId)
+    for (const other of others) {
+      await api.updateModelCatalogEntry(other.id, { is_default: false })
+    }
+  }
+
   async function createModel(entry: Omit<ModelCatalogEntry, 'id'>) {
     setBusy(true)
     // A previous action's failure must not linger over a new attempt.
     succeeded('action')
     try {
-      await api.createModelCatalogEntry(entry)
+      const created = await api.createModelCatalogEntry(entry)
+      // At most one default: a new default replaces the existing one(s).
+      if (entry.is_default) await clearOtherDefaults(created?.id)
       await refreshModels()
     } catch (err) {
       failed('action', `Failed to create model: ${errorText(err)}`)
@@ -358,6 +367,8 @@ export default function App() {
     succeeded('action')
     try {
       await api.updateModelCatalogEntry(entryId, updates)
+      // At most one default: marking this one moves the flag off the others.
+      if (updates.is_default === true) await clearOtherDefaults(entryId)
       await refreshModels()
     } catch (err) {
       failed('action', `Failed to update model: ${errorText(err)}`)

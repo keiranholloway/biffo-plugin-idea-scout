@@ -338,6 +338,23 @@ describe('Idea Scout admin panel', () => {
         expect(updateModelCatalogEntry).toHaveBeenCalledWith('model1', { active: false })
       })
     })
+
+    it('clears the existing default when another model is marked default', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+
+      await user.click(await screen.findByRole('tab', { name: /^Models$/i }))
+      expect(await screen.findByText(/Current default model: Claude Opus \(Web\)/)).toBeTruthy()
+      const editButtons = await screen.findAllByRole('button', { name: /^Edit$/i })
+      await user.click(editButtons[1])
+      await user.click(screen.getByLabelText('Default'))
+      await user.click(screen.getByRole('button', { name: /^Save$/i }))
+
+      await waitFor(() => {
+        expect(updateModelCatalogEntry).toHaveBeenCalledWith('model2', { is_default: true })
+        expect(updateModelCatalogEntry).toHaveBeenCalledWith('model1', { is_default: false })
+      })
+    })
   })
 
   describe('Agents tab', () => {
