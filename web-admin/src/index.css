@@ -524,6 +524,12 @@ button:disabled {
   padding: 1rem;
 }
 
+.admin-default-summary {
+  color: var(--text-muted, #5b6070);
+  font-size: 0.9rem;
+  margin: 0 0 0.75rem;
+}
+
 /* ── admin note (informational message) ──────────────────────────────────── */
 
 .admin-note {

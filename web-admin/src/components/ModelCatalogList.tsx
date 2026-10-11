@@ -50,8 +50,20 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
     return <p className="admin-empty">No models in the catalog yet.</p>
   }
 
+  const defaults = entries.filter((e) => e.is_default)
+  const currentDefault = defaults.length === 1 ? defaults[0] : null
+
   return (
     <div className="admin-list">
+      <p className="admin-default-summary" role="status">
+        {defaults.length === 0
+          ? 'No default model is set.'
+          : currentDefault
+            ? `Current default model: ${currentDefault.label}`
+            : `Warning: ${defaults.length} models are marked default (${defaults
+                .map((d) => d.label)
+                .join(', ')}). Saving a model as default will clear the others.`}
+      </p>
       {entries.map((entry) =>
         editingId === entry.id ? (
           <div key={entry.id} className="admin-list-item">
