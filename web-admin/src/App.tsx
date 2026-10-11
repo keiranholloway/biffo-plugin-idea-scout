@@ -20,6 +20,19 @@ import { getCurrentSession, getFreshIdToken } from './lib/auth'
 
 type Tab = 'build-types' | 'business-models' | 'agents' | 'models'
 
+const TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'build-types', label: 'Build Types' },
+  { id: 'business-models', label: 'Business Models' },
+  { id: 'agents', label: 'Agents' },
+  { id: 'models', label: 'Models' },
+]
+
+/** The tab named by the URL hash (`#/models`), defaulting to Build Types. */
+function tabFromHash(hash: string): Tab {
+  const id = hash.replace(/^#\/?/, '')
+  return TABS.find((t) => t.id === id)?.id ?? 'build-types'
+}
+
 function errorText(e: unknown): string {
   if (e instanceof Error) return e.message
   return String(e)
@@ -37,7 +50,20 @@ export default function App() {
   // never goes stale — nothing here snapshots a token (biffo-plugin-ideation#69).
   const [api] = useState(() => createApi(getFreshIdToken))
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
-  const [tab, setTab] = useState<Tab>('build-types')
+  // The open tab lives in the URL hash so a reload keeps it and each tab has
+  // its own bookmarkable address.
+  const [tab, setTabState] = useState<Tab>(() => tabFromHash(window.location.hash))
+  useEffect(() => {
+    const onHashChange = () => setTabState(tabFromHash(window.location.hash))
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+  const setTab = useCallback((next: Tab) => {
+    setTabState(next)
+    if (tabFromHash(window.location.hash) !== next || window.location.hash === '') {
+      window.location.hash = `#/${next}`
+    }
+  }, [])
 
   // Build types state
   const [types, setTypes] = useState<BuildType[]>([])
@@ -374,35 +400,31 @@ export default function App() {
 
       {loaded && (
         <>
-          <div className="admin-tabs">
-            <button
-              className={`admin-tab ${tab === 'build-types' ? 'admin-tab--active' : ''}`}
-              onClick={() => setTab('build-types')}
-            >
-              Build Types
-            </button>
-            <button
-              className={`admin-tab ${tab === 'business-models' ? 'admin-tab--active' : ''}`}
-              onClick={() => setTab('business-models')}
-            >
-              Business Models
-            </button>
-            <button
-              className={`admin-tab ${tab === 'agents' ? 'admin-tab--active' : ''}`}
-              onClick={() => setTab('agents')}
-            >
-              Agents
-            </button>
-            <button
-              className={`admin-tab ${tab === 'models' ? 'admin-tab--active' : ''}`}
-              onClick={() => setTab('models')}
-            >
-              Models
-            </button>
+          <div className="admin-tabs" role="tablist" aria-label="Idea Scout admin sections">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`admin-tab-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`admin-panel-${t.id}`}
+                tabIndex={tab === t.id ? 0 : -1}
+                className={`admin-tab ${tab === t.id ? 'admin-tab--active' : ''}`}
+                onClick={() => setTab(t.id)}
+              >
+                {t.label}
+              </button>
+            ))}
           </div>
 
           {tab === 'build-types' && (
-            <section className="admin-section">
+            <section
+              className="admin-section"
+              role="tabpanel"
+              id="admin-panel-build-types"
+              aria-labelledby="admin-tab-build-types"
+            >
               <h2>Build Types</h2>
               <p className="muted">
                 The categories a founder chooses from on the run form. Deactivating a category hides
@@ -441,7 +463,12 @@ export default function App() {
           )}
 
           {tab === 'business-models' && (
-            <section className="admin-section">
+            <section
+              className="admin-section"
+              role="tabpanel"
+              id="admin-panel-business-models"
+              aria-labelledby="admin-tab-business-models"
+            >
               <h2>Business Models</h2>
               <p className="muted">
                 How an idea makes money. Optional on the run form — a founder may have no
@@ -485,7 +512,12 @@ export default function App() {
           )}
 
           {tab === 'agents' && (
-            <section className="admin-section">
+            <section
+              className="admin-section"
+              role="tabpanel"
+              id="admin-panel-agents"
+              aria-labelledby="admin-tab-agents"
+            >
               <h2>Agents</h2>
               <p className="muted">
                 Admin-editable prompts and models for the four agent roles that run the research
@@ -504,7 +536,12 @@ export default function App() {
           )}
 
           {tab === 'models' && (
-            <section className="admin-section">
+            <section
+              className="admin-section"
+              role="tabpanel"
+              id="admin-panel-models"
+              aria-labelledby="admin-tab-models"
+            >
               <h2>Models</h2>
               <p className="muted">
                 The catalog of models available for research and synthesis. The{' '}

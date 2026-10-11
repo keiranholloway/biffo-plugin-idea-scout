@@ -178,6 +178,7 @@ const MODEL_NOT_WEB_CAPABLE = {
 
 describe('Idea Scout admin panel', () => {
   beforeEach(() => {
+    window.location.hash = ''
     createApiCalls.length = 0
     getFreshIdToken.mockReset().mockResolvedValue('test-token')
     listBuildTypes.mockReset().mockResolvedValue([MICRO_SAAS])
@@ -214,7 +215,7 @@ describe('Idea Scout admin panel', () => {
     it('lists the models an admin has configured', async () => {
       listBusinessModels.mockResolvedValue([SUBSCRIPTION])
       render(<App />)
-      await userEvent.click(await screen.findByRole('button', { name: /^Business Models$/i }))
+      await userEvent.click(await screen.findByRole('tab', { name: /^Business Models$/i }))
       expect(await screen.findByText('Subscription / SaaS')).toBeTruthy()
     })
 
@@ -224,15 +225,15 @@ describe('Idea Scout admin panel', () => {
       // non-problem.
       listBusinessModels.mockResolvedValue([])
       render(<App />)
-      await userEvent.click(await screen.findByRole('button', { name: /^Business Models$/i }))
+      await userEvent.click(await screen.findByRole('tab', { name: /^Business Models$/i }))
       expect(await screen.findByText(/omits the picker until one exists/i)).toBeTruthy()
     })
 
     it('does not disturb the build-types pane it shares components with', async () => {
       listBusinessModels.mockResolvedValue([SUBSCRIPTION])
       render(<App />)
-      await userEvent.click(await screen.findByRole('button', { name: /^Business Models$/i }))
-      await userEvent.click(screen.getByRole('button', { name: /Build Types/i }))
+      await userEvent.click(await screen.findByRole('tab', { name: /^Business Models$/i }))
+      await userEvent.click(screen.getByRole('tab', { name: /Build Types/i }))
       expect(await screen.findByText(MICRO_SAAS.label)).toBeTruthy()
       expect(screen.queryByText('Subscription / SaaS')).toBeNull()
     })
@@ -242,19 +243,44 @@ describe('Idea Scout admin panel', () => {
     it('renders four tabs: Build Types, Business Models, Agents, Models', async () => {
       render(<App />)
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /Build Types/i })).toBeTruthy()
-        expect(screen.getByRole('button', { name: /^Business Models$/i })).toBeTruthy()
-        expect(screen.getByRole('button', { name: /Agents/i })).toBeTruthy()
-        expect(screen.getByRole('button', { name: /^Models$/i })).toBeTruthy()
+        expect(screen.getByRole('tab', { name: /Build Types/i })).toBeTruthy()
+        expect(screen.getByRole('tab', { name: /^Business Models$/i })).toBeTruthy()
+        expect(screen.getByRole('tab', { name: /Agents/i })).toBeTruthy()
+        expect(screen.getByRole('tab', { name: /^Models$/i })).toBeTruthy()
       })
     })
 
     it('defaults to Build Types tab', async () => {
       render(<App />)
       await waitFor(() => {
-        const buildTypesTab = screen.getByRole('button', { name: /Build Types/i })
+        const buildTypesTab = screen.getByRole('tab', { name: /Build Types/i })
         expect(buildTypesTab).toHaveClass('admin-tab--active')
       })
+    })
+
+    it('exposes the selected tab via aria-selected', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+      const models = await screen.findByRole('tab', { name: /^Models$/i })
+      expect(models).toHaveAttribute('aria-selected', 'false')
+      await user.click(models)
+      expect(models).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByRole('tab', { name: /Build Types/i })).toHaveAttribute(
+        'aria-selected',
+        'false',
+      )
+    })
+
+    it('gives each tab its own address and restores it on load', async () => {
+      const user = userEvent.setup()
+      const first = render(<App />)
+      await user.click(await screen.findByRole('tab', { name: /Agents/i }))
+      expect(window.location.hash).toBe('#/agents')
+      first.unmount()
+
+      render(<App />)
+      const agents = await screen.findByRole('tab', { name: /Agents/i })
+      expect(agents).toHaveAttribute('aria-selected', 'true')
     })
 
     it('renders the Build Types pane when Build Types tab is active', async () => {
@@ -268,7 +294,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       await waitFor(() => {
@@ -282,7 +308,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
+      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
       await user.click(modelsTab)
 
       await waitFor(() => {
@@ -303,7 +329,7 @@ describe('Idea Scout admin panel', () => {
       ])
       render(<App />)
 
-      await user.click(await screen.findByRole('button', { name: /^Models$/i }))
+      await user.click(await screen.findByRole('tab', { name: /^Models$/i }))
       await user.click(await screen.findByRole('button', { name: /^Edit$/i }))
       await user.click(screen.getByLabelText('Active'))
       await user.click(screen.getByRole('button', { name: /^Save$/i }))
@@ -319,7 +345,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       await waitFor(() => {
@@ -333,7 +359,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       const editButtons = await screen.findAllByRole('button', { name: /Edit/i })
@@ -369,7 +395,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       const editButtons = await screen.findAllByRole('button', { name: /Edit/i })
@@ -402,7 +428,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       // Anchor on the synthesis row actually being rendered, so this cannot pass
@@ -422,7 +448,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       await waitFor(() => {
@@ -447,7 +473,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const agentsTab = await screen.findByRole('button', { name: /Agents/i })
+      const agentsTab = await screen.findByRole('tab', { name: /Agents/i })
       await user.click(agentsTab)
 
       // Find the "Store a copy to edit" button for the first built-in
@@ -476,7 +502,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
+      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
       await user.click(modelsTab)
 
       await waitFor(() => {
@@ -489,7 +515,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
+      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
       await user.click(modelsTab)
 
       await waitFor(() => {
@@ -503,7 +529,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
+      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
       await user.click(modelsTab)
 
       const addButton = await screen.findByRole('button', { name: /Add.*Model/i })
@@ -520,7 +546,7 @@ describe('Idea Scout admin panel', () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('button', { name: /^Models$/i })
+      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
       await user.click(modelsTab)
 
       const addButton = await screen.findByRole('button', { name: /Add.*Model/i })
@@ -559,7 +585,7 @@ describe('Idea Scout admin panel', () => {
       getBuiltinAgents.mockRejectedValue(new Error('403: Forbidden'))
 
       render(<App />)
-      await userEvent.click(await screen.findByRole('button', { name: /agents/i }))
+      await userEvent.click(await screen.findByRole('tab', { name: /agents/i }))
 
       await waitFor(() => {
         expect(screen.getByText(/Could not load the agents/i)).toBeInTheDocument()
@@ -591,7 +617,7 @@ describe('Idea Scout admin panel', () => {
       getBuiltinAgents.mockResolvedValue({ agents: [] })
 
       render(<App />)
-      await userEvent.click(await screen.findByRole('button', { name: /agents/i }))
+      await userEvent.click(await screen.findByRole('tab', { name: /agents/i }))
 
       await waitFor(() => {
         expect(screen.getByText(/No agents stored/i)).toBeInTheDocument()
