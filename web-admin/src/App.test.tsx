@@ -6,7 +6,7 @@
  * - Agents tab: edit admin-configured prompts for five agent roles
  * - Models tab: CRUD the model catalog with web_capable visibility
  */
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -478,6 +478,24 @@ describe('Idea Scout admin panel', () => {
       // Verify no placeholder text appears anywhere on the page
       expect(screen.queryByText(/Built-in prompt — stored row not found/)).toBeNull()
       expect(screen.queryByText(/\(Built-in default\)/)).toBeNull()
+    })
+
+    it('deletes an agent through the in-page confirm, not window.confirm', async () => {
+      const nativeConfirm = vi.fn(() => true)
+      vi.stubGlobal('confirm', nativeConfirm)
+      const user = userEvent.setup()
+      render(<App />)
+
+      await user.click(await screen.findByRole('tab', { name: /Agents/i }))
+      const [first] = await screen.findAllByRole('button', { name: 'Delete' })
+      await user.click(first)
+      expect(deleteChatAgent).not.toHaveBeenCalled()
+
+      const group = await screen.findByRole('group', { name: 'Delete this agent?' })
+      await user.click(within(group).getByRole('button', { name: 'Delete' }))
+
+      await waitFor(() => expect(deleteChatAgent).toHaveBeenCalledTimes(1))
+      expect(nativeConfirm).not.toHaveBeenCalled()
     })
 
     it('promotes a built-in with real prompt content', async () => {

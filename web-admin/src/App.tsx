@@ -289,7 +289,6 @@ export default function App() {
   }
 
   async function deleteAgent(agentKey: string) {
-    if (!window.confirm('Delete this agent? This action cannot be undone.')) return
     setBusy(true)
     // A previous action's failure must not linger over a new attempt.
     succeeded('action')
@@ -378,7 +377,6 @@ export default function App() {
   }
 
   async function deleteModel(entryId: string) {
-    if (!window.confirm('Delete this model? This action cannot be undone.')) return
     setBusy(true)
     // A previous action's failure must not linger over a new attempt.
     succeeded('action')
@@ -395,7 +393,7 @@ export default function App() {
   if (signedIn === false) {
     return (
       <main className="page">
-        <h1>Idea Scout — Admin</h1>
+        <h1 className="biffo-heading">Idea Scout — Admin</h1>
         <p className="error">Not signed in. Open this from the Biffo portal.</p>
       </main>
     )
@@ -403,7 +401,7 @@ export default function App() {
 
   return (
     <main className="page">
-      <h1>Idea Scout — Admin</h1>
+      <h1 className="biffo-heading">Idea Scout — Admin</h1>
 
       {error != null && <div className="admin-error">{error}</div>}
 
@@ -454,7 +452,7 @@ export default function App() {
               />
 
               {!creating && editing == null && (
-                <button type="button" className="primary" onClick={() => setCreating(true)}>
+                <button type="button" className="biffo-btn-primary" onClick={() => setCreating(true)}>
                   Add a build type
                 </button>
               )}
@@ -502,7 +500,7 @@ export default function App() {
               />
 
               {!creatingModel && editingModel == null && (
-                <button type="button" className="primary" onClick={() => setCreatingModel(true)}>
+                <button type="button" className="biffo-btn-primary" onClick={() => setCreatingModel(true)}>
                   Add a business model
                 </button>
               )}

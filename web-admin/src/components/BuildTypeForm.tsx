@@ -91,7 +91,7 @@ export function BuildTypeForm({ existing, busy, onSave, onCancel, noun = 'build 
       </label>
 
       <div className="form-actions">
-        <button type="submit" className="primary" disabled={!canSave}>
+        <button type="submit" className="biffo-btn-primary" disabled={!canSave}>
           {busy ? 'Saving…' : 'Save'}
         </button>
         <button type="button" onClick={onCancel} disabled={busy}>

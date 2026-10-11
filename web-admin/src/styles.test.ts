@@ -42,7 +42,7 @@ describe('index.css covers the classes this app emits', () => {
   const css = readFileSync(join(SRC, 'index.css'), 'utf8')
 
   it('styles every literal className in the components', () => {
-    const unstyled = [...classNamesUsed()].filter((name) => !css.includes(`.${name}`))
+    const unstyled = [...classNamesUsed()].filter((name) => !name.startsWith('biffo-') && !css.includes(`.${name}`))
     expect(unstyled).toEqual([])
   })
 
@@ -54,5 +54,13 @@ describe('index.css covers the classes this app emits', () => {
     // Three surfaces once carried three different brand blues; the tokens
     // package exists to end that. A local hex for a token colour is the drift.
     expect(css).toContain("@import '@biffo/design-tokens/tokens.css'")
+  })
+
+  it('takes buttons, heading and status from the shared kit, not local overrides', () => {
+    expect(css).toContain("@import '@biffo/design-tokens/kit.css'")
+    expect(css).not.toMatch(/^h1\s*\{/m)
+    expect(css).not.toMatch(/\.admin-btn-(primary|danger)|\.primary\b|\.type-status|\.badge-(in)?active/)
+    expect(css).not.toMatch(/font-family:\s*var\(--font-sans/)
+    expect(css).not.toMatch(/max-width:\s*(60|745)/)
   })
 })

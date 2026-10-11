@@ -1,3 +1,4 @@
+import { statusBadgeClass, statusLabel } from '@biffo/design-tokens/status.mjs'
 import type { BuildType } from '../lib/api'
 
 interface Props {
@@ -59,8 +60,8 @@ export function BuildTypeList({
               </td>
               <td>{type.sort_order ?? '—'}</td>
               <td>
-                <span className="type-status" data-active={active ? 'yes' : 'no'}>
-                  {active ? 'Active' : 'Hidden'}
+                <span className={statusBadgeClass(active ? 'active' : 'inactive')}>
+                  {statusLabel(active ? 'active' : 'inactive')}
                 </span>
               </td>
               <td className="type-actions">
