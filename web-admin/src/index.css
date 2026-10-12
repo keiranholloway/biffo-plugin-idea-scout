@@ -211,8 +211,9 @@ button:disabled {
 }
 
 .admin-tab--active {
-  color: var(--brand, #4f46e5);
-  border-bottom-color: var(--brand, #4f46e5);
+  /* Kit/portal active-tab colour is --text (near-black), not --brand (indigo). */
+  color: var(--text, #0f172a);
+  border-bottom-color: var(--text, #0f172a);
 }
 
 /* ── admin section ────────────────────────────────────────────────────────── */
