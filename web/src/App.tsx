@@ -1,3 +1,4 @@
+import { statusLabel } from "@biffo/design-tokens/status.mjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CadenceControl } from "./components/CadenceControl";
@@ -318,8 +319,8 @@ export default function App() {
                     {typeLabel(buildTypes, run.build_type)}
                   </span>
                   <span className="run-meta">
-                    <span className="run-status" data-status={statusLabel(run)}>
-                      {statusLabel(run)}
+                    <span className="run-status" data-status={runStatusKey(run)}>
+                      {statusLabel(runStatusKey(run))}
                     </span>
                     {started != null && (
                       <time
@@ -468,7 +469,7 @@ function modelLabel(models: ModelOption[], id: string): string {
   return models.find((model) => model.id === id)?.label ?? id;
 }
 
-function statusLabel(run: RunState): string {
+function runStatusKey(run: RunState): string {
   if (run.status === "complete") return "ready";
   if (run.status === "failed") return "failed";
   return "running";

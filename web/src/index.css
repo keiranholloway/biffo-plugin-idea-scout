@@ -127,7 +127,8 @@ body {
 .run-status {
   font-size: 0.68rem;
   font-weight: 600;
-  text-transform: uppercase;
+  /* Wording comes from the kit's statusLabel() (Title case); never re-case it. */
+  text-transform: none;
   letter-spacing: 0.04em;
   padding: 0.1rem 0.4rem;
   border-radius: 999px;
