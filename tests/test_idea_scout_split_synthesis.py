@@ -192,10 +192,13 @@ async def test_a_full_fan_in_at_realistic_input_size_yields_ranked_scored_candid
     assert [c.rank for c in stored] == list(range(1, 9))
     assert [c.title for c in stored] == [f"Idea {i}" for i in range(1, 9)]
     # Scores are the ranking call's, not whatever the write-up echoed.
-    assert stored[0].scorecard["viability"]["score"] == 5
-    assert stored[1].scorecard["viability"]["score"] == 4
-    assert stored[0].scorecard["market_fit"]["score"] == 4
-    assert stored[0].scorecard["summary"].endswith("is worth a look.")
+    cards = [c.scorecard for c in stored]
+    sc0: Any = cards[0]
+    sc1: Any = cards[1]
+    assert sc0["viability"]["score"] == 5
+    assert sc1["viability"]["score"] == 4
+    assert sc0["market_fit"]["score"] == 4
+    assert sc0["summary"].endswith("is worth a look.")
 
 
 async def test_the_ranking_is_not_complete_until_every_write_up_is_terminal():
@@ -259,3 +262,22 @@ async def test_findings_message_helper_still_matches_the_research_contract():
     assert findings_message()[0]["tool_calls"][0]["function"]["name"] == (
         "submit_research_findings"
     )
+
+
+async def test_a_ranking_call_with_an_invalid_shortlist_fails_the_run():
+    core = FakeCoreGateway()
+    svc = _service(core)
+    run = await svc.start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+    for rid, angle in zip(
+        run.research_run_ids, ("community", "narrative", "competitive"), strict=True
+    ):
+        core.agent_runs[rid].complete(_big_findings(angle))
+    core.engine_fires_synthesis(run.id).complete(
+        _call(CANDIDATES_TOOL_NAME, {"ideas": "not a list"})
+    )
+    await svc.get_run(owner_sub=OWNER, run_id=run.id)
+
+    state = await svc.get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert state.status == m.FAILED
+    assert "nothing usable" in (state.failure_reason or "")
