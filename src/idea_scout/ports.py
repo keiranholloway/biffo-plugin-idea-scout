@@ -54,8 +54,8 @@ class CoreGateway(Protocol):
         ...
 
     async def list_model_catalog(self, *, active_only: bool = True) -> list[ModelCatalogEntry]:
-        """The model catalog entries offered in the run form, ascending by
-        ``label``. Admin-managed through generic CRUD."""
+        """The model catalog entries, ascending by ``label``. The active
+        ``is_default`` base-id row is the one model every agent runs on."""
         ...
 
     async def get_own_config(self, *, role: str) -> dict[str, Any] | None:

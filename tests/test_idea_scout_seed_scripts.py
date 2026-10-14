@@ -79,14 +79,13 @@ def test_every_seeded_row_is_active():
 # ── Model catalog ────────────────────────────────────────────────────────────
 
 
-def test_the_default_research_model_is_seeded_usable_and_default():
-    """Without this row `start_run` 422s on the default research model."""
-    from idea_scout.definitions import DEFAULT_RESEARCH_MODEL
+def test_the_curated_catalog_is_base_ids_from_the_shared_list():
+    from idea_scout.definitions import CURATED_MODELS, DEFAULT_SELECTED_MODEL
 
     models = load_script("seed_model_catalog").MODELS
-    rows = [m for m in models if m["model_id"] == DEFAULT_RESEARCH_MODEL]
-    assert len(rows) == 1
-    assert rows[0]["active"] and rows[0]["web_capable"] and rows[0]["is_default"]
+    assert [m["model_id"] for m in models] == [m["model_id"] for m in CURATED_MODELS]
+    assert DEFAULT_SELECTED_MODEL in {m["model_id"] for m in models}
+    assert all(":" not in m["model_id"] and m["active"] for m in models)
     assert len({m["model_id"] for m in models}) == len(models)
 
 
@@ -123,5 +122,25 @@ def test_a_failed_catalog_create_exits_nonzero(monkeypatch, capsys):
         raise _http_error(500)
 
     monkeypatch.setattr(script, "_request", fake)
+    assert script.main() == 1
+    assert "Failed on" in capsys.readouterr().err
+
+
+def test_agent_config_seed_tolerates_409_and_fails_on_other_errors(monkeypatch, capsys):
+    script = load_script("seed_agent_config")
+    monkeypatch.setenv("CORE_API_URL", "http://api")
+    monkeypatch.setenv("ADMIN_BEARER_TOKEN", "tok")
+    monkeypatch.setattr("sys.argv", ["seed_agent_config.py"])
+
+    def conflict(*_a, **_k):
+        raise _http_error(409)
+
+    monkeypatch.setattr(script, "_request", conflict)
+    assert script.main() == 0
+
+    def boom(*_a, **_k):
+        raise _http_error(500)
+
+    monkeypatch.setattr(script, "_request", boom)
     assert script.main() == 1
     assert "Failed on" in capsys.readouterr().err

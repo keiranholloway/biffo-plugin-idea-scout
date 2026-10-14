@@ -70,7 +70,37 @@ export interface ModelCatalogEntry {
   label: string
   active: boolean | null
   is_default: boolean | null
-  web_capable: boolean | null
+}
+
+/** One agent's models, from `GET /model`. */
+export interface AgentModelInfo {
+  agent_key: string
+  /** What the agent runs on: the selected model, with `:online` where it searches. */
+  effective_model: string
+  /** What its stored row currently holds (what fan-in and chat turns read). */
+  stored_model: string | null
+  /** Decided in code per agent; read-only. */
+  web_search: boolean
+  stored: boolean
+  /** The stored row differs from the effective model. */
+  drift: boolean
+}
+
+export interface ModelOptionInfo {
+  id: string
+  model_id: string
+  label: string
+}
+
+export interface ModelSelection {
+  selected_model_id: string
+  options: ModelOptionInfo[]
+  agents: AgentModelInfo[]
+}
+
+/** A base model id has no `:` suffix; web search is decided per agent in code. */
+export function isBaseModelId(modelId: string): boolean {
+  return modelId.trim() !== '' && !modelId.includes(':')
 }
 
 export function createApi(token: () => string | null | Promise<string | null>) {
@@ -104,6 +134,11 @@ export function createApi(token: () => string | null | Promise<string | null>) {
       request<ChatAgent>('PUT', `/chat-agents/${agentKey}`, updates, AGENTS_BASE),
     deleteChatAgent: (agentKey: string) =>
       request<void>('DELETE', `/chat-agents/${agentKey}`, undefined, AGENTS_BASE),
+
+    // The one model every agent runs on
+    getModelSelection: () => request<ModelSelection>('GET', '/model', undefined, AGENTS_BASE),
+    setModelSelection: (modelId: string) =>
+      request<ModelSelection>('PUT', '/model', { model_id: modelId }, AGENTS_BASE),
 
     // Model catalog
     listModelCatalog: () =>

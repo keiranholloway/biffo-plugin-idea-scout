@@ -96,9 +96,7 @@ def _client(core: FakeCoreGateway, sub: str) -> TestClient:
     app.dependency_overrides[require_founder] = lambda: ForwardedUser(
         sub=sub, groups=["founder"], token="tok"
     )
-    app.dependency_overrides[get_service] = lambda: IdeaScoutService(
-        core, research_model="r/m", synthesis_model="s/m"
-    )
+    app.dependency_overrides[get_service] = lambda: IdeaScoutService(core)
     return TestClient(app)
 
 

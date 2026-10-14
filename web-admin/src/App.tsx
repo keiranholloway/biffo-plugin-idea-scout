@@ -14,6 +14,7 @@ import {
   type BusinessModel,
   type BusinessModelDraft,
   type ChatAgent,
+  type ModelSelection,
   type ModelCatalogEntry,
 } from './lib/api'
 import { getCurrentSession, getFreshIdToken } from './lib/auth'
@@ -41,8 +42,8 @@ function errorText(e: unknown): string {
 /**
  * Idea Scout's admin surface with three tabs:
  * - Build Types: the categories a founder picks from
- * - Agents: admin-editable prompts for four agent roles
- * - Models: CRUD for the model catalog with web_capable visibility
+ * - Agents: the one model every agent runs on, and admin-editable prompts
+ * - Models: CRUD for the catalog of base models the dropdown offers
  */
 export default function App() {
   // Created once and never rebuilt: `getFreshIdToken` is a stable module-level
@@ -76,6 +77,10 @@ export default function App() {
   // Agents state
   const [agents, setAgents] = useState<ChatAgent[]>([])
   const [builtinAgents, setBuiltinAgents] = useState<ChatAgent[]>([])
+
+  // The one model every agent runs on (`GET /model`), and the dropdown's pending choice.
+  const [selection, setSelection] = useState<ModelSelection | null>(null)
+  const [pendingModel, setPendingModel] = useState<string>('')
 
   // Models state
   const [models, setModels] = useState<ModelCatalogEntry[]>([])
@@ -166,6 +171,17 @@ export default function App() {
     }
   }, [api])
 
+  const refreshSelection = useCallback(async () => {
+    try {
+      const result = await api.getModelSelection()
+      setSelection(result)
+      setPendingModel(result.selected_model_id)
+      succeeded('model-selection')
+    } catch (err) {
+      failed('model-selection', `Failed to load the selected model: ${errorText(err)}`)
+    }
+  }, [api])
+
   const refreshModels = useCallback(async () => {
     try {
       setModels(await api.listModelCatalog())
@@ -191,6 +207,7 @@ export default function App() {
     void refreshBusinessModels()
     void refreshAgents()
     void refreshBuiltinAgents()
+    void refreshSelection()
     void refreshModels()
     setLoaded(true)
   }, [
@@ -199,6 +216,7 @@ export default function App() {
     refreshBusinessModels,
     refreshAgents,
     refreshBuiltinAgents,
+    refreshSelection,
     refreshModels,
   ])
 
@@ -288,6 +306,24 @@ export default function App() {
     }
   }
 
+  /** Save the dropdown's choice (or re-apply the current one): one `PUT /model`.
+   * On failure the error is shown and the selection stays what the server holds. */
+  async function applyModel(modelId: string) {
+    setBusy(true)
+    succeeded('action')
+    try {
+      const result = await api.setModelSelection(modelId)
+      setSelection(result)
+      setPendingModel(result.selected_model_id)
+      await Promise.all([refreshAgents(), refreshModels()])
+    } catch (err) {
+      failed('action', `Failed to set the model: ${errorText(err)}`)
+      setPendingModel(selection?.selected_model_id ?? '')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function deleteAgent(agentKey: string) {
     setBusy(true)
     // A previous action's failure must not linger over a new attempt.
@@ -321,7 +357,10 @@ export default function App() {
         agent_name: agent.agent_name,
         role: agent.role,
         system_prompt: agent.system_prompt,
-        model: agent.model,
+        // The server stores the effective model of the selected one.
+        model:
+          selection?.agents.find((a) => a.agent_key === agent.agent_key)?.effective_model ??
+          agent.model,
         required_group: agent.required_group,
         active: agent.active,
         max_history_messages: agent.max_history_messages,
@@ -529,13 +568,47 @@ export default function App() {
             >
               <h2>Agents</h2>
               <p className="muted">
-                Admin-editable prompts and models for the four agent roles that run the research
-                and synthesis.
+                One model runs every agent. Web search is decided per agent in code and is not
+                configurable. Prompts stay editable per agent.
               </p>
+              <div className="admin-model-select">
+                <label>
+                  Model for all agents:
+                  <select
+                    value={pendingModel}
+                    onChange={(e) => setPendingModel(e.target.value)}
+                    disabled={busy || selection == null}
+                  >
+                    {selection != null &&
+                      !selection.options.some((o) => o.model_id === pendingModel) && (
+                        <option value={pendingModel}>{pendingModel}</option>
+                      )}
+                    {(selection?.options ?? []).map((o) => (
+                      <option key={o.id} value={o.model_id}>
+                        {o.label} — {o.model_id}
+                      </option>
+                    ))}
+                  </select>
+                </label>{' '}
+                <button
+                  type="button"
+                  className="biffo-btn-primary"
+                  disabled={
+                    busy || selection == null || pendingModel === selection.selected_model_id
+                  }
+                  onClick={() => void applyModel(pendingModel)}
+                >
+                  Apply model
+                </button>
+              </div>
               <AgentList
                 agents={agents}
                 builtinAgents={builtinAgents}
                 loadFailed={agentsFailed}
+                modelInfo={selection?.agents ?? []}
+                onReapplyModel={
+                  selection != null ? () => void applyModel(selection.selected_model_id) : undefined
+                }
                 onUpdate={updateAgent}
                 onDelete={deleteAgent}
                 onStoreBuiltin={storeBuiltinAgent}
@@ -553,9 +626,8 @@ export default function App() {
             >
               <h2>Models</h2>
               <p className="muted">
-                The catalog of models available for research and synthesis. The{' '}
-                <strong>web-capable</strong> flag indicates whether a model can reach the web
-                through OpenRouter&apos;s :online suffix.
+                The catalog of base models the Agents page offers. Ids carry no suffix — web search
+                (<code>:online</code>) is decided per agent in code.
               </p>
               <ModelCatalogForm onSubmit={createModel} />
               <ModelCatalogList entries={models} onUpdate={updateModel} onDelete={deleteModel} />

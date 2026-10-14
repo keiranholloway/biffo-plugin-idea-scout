@@ -39,8 +39,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -57,8 +55,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={onStart}
       />,
@@ -69,7 +65,7 @@ describe("RunForm", () => {
 
     // The third argument is the preference selection — empty here because
     // nothing is pre-selected, which is the deliberate default (#34).
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], undefined, undefined);
+    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], undefined);
   });
 
   it("shows the chosen type’s description, because it feeds the research brief", async () => {
@@ -79,8 +75,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -100,8 +94,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -119,8 +111,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -143,8 +133,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -160,8 +148,6 @@ describe("RunForm", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy
         onStart={vi.fn()}
       />,
@@ -179,8 +165,6 @@ describe("weight preferences (#34)", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -199,8 +183,6 @@ describe("weight preferences (#34)", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={onStart}
       />,
@@ -215,7 +197,6 @@ describe("weight preferences (#34)", () => {
       3,
       ["recurring-revenue"],
       undefined,
-      undefined,
     );
   });
 
@@ -226,8 +207,6 @@ describe("weight preferences (#34)", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -248,8 +227,6 @@ describe("weight preferences (#34)", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -266,8 +243,6 @@ describe("weight preferences (#34)", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={[]}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -288,8 +263,6 @@ describe("the promise made to a founder about waiting (#27)", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -299,182 +272,26 @@ describe("the promise made to a founder about waiting (#27)", () => {
   });
 });
 
-describe("Model picker (M3)", () => {
-  const MODELS = [
-    { id: "m1", model_id: "anthropic/claude-sonnet-4:online", label: "Sonnet", is_default: false },
-    { id: "m2", model_id: "anthropic/claude-opus-4:online", label: "Opus", is_default: true },
-  ];
-
-  it("offers exactly what GET /models returned", () => {
-    render(
-      <RunForm
-        buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
-        complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={MODELS}
-        selectedModel={null}
-        busy={false}
-        onStart={vi.fn()}
-      />,
-    );
-
-    const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
-    // Count the MODEL options — those with a value. The empty-valued option is
-    // "no choice made", not an invented model, and it exists so the select can
-    // never display a model it has not got. The property this test defends is
-    // unchanged: the models offered are exactly the ones the API returned.
-    const modelOptions = Array.from(select.options)
-      .filter((opt) => opt.value !== "")
-      .map((opt) => opt.textContent);
-    expect(modelOptions).toContain("Sonnet");
-    expect(modelOptions).toContain("Opus");
-    expect(modelOptions).toHaveLength(2);
-  });
-
-  it("pre-selects the last-used model when there is one", () => {
-    render(
-      <RunForm
-        buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
-        complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={MODELS}
-        selectedModel="m1"
-        busy={false}
-        onStart={vi.fn()}
-      />,
-    );
-
-    const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
-    expect(select.value).toBe("m1");
-  });
-
-  it("falls back to is_default when last-used is null", () => {
-    render(
-      <RunForm
-        buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
-        complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={MODELS}
-        selectedModel={null}
-        busy={false}
-        onStart={vi.fn()}
-      />,
-    );
-
-    const select = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
-    expect(select.value).toBe("m2");
-  });
-
-  it("does not render an empty dropdown or break when model list is empty", () => {
+describe("no per-run model choice", () => {
+  it("renders no model select and starts a run without one", async () => {
     const onStart = vi.fn();
     render(
       <RunForm
         buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
+        businessModels={[]}
         complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={[]}
-        selectedModel={null}
+        preferences={[]}
         busy={false}
         onStart={onStart}
       />,
     );
 
-    // Form should still work
-    expect(screen.getByRole("button", { name: "Run now" })).not.toBeNull();
-    expect(screen.queryByText(/model/i)).toBeNull();
-  });
-
-  it("includes model selection in run start, or omits it if no selection", async () => {
-    const onStart = vi.fn();
-    render(
-      <RunForm
-        buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
-        complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={MODELS}
-        selectedModel="m1"
-        busy={false}
-        onStart={onStart}
-      />,
-    );
-
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "mobile-app");
-    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
-
-    // With a model selected, should pass it
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], "m1", undefined);
-  });
-
-  it("omits research_model rather than sending empty string", async () => {
-    const onStart = vi.fn();
-    render(
-      <RunForm
-        buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
-        complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={[]}
-        selectedModel={null}
-        busy={false}
-        onStart={onStart}
-      />,
-    );
-
-    await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "mobile-app");
-    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
-
-    // Without a model available/selected, should not include research_model param
-    expect(onStart).toHaveBeenCalledWith("mobile-app", 3, [], undefined, undefined);
-  });
-});
-
-  it("never displays a model as chosen when none is", async () => {
-    // With no last-used model and no `is_default` in the catalog, `modelId` is
-    // empty. A select whose value matches no option renders the FIRST one, so the
-    // form claimed a model it did not hold — and submitted the wrong thing.
-    // The explicit empty option makes "nothing chosen" look like nothing chosen.
-    const onStart = vi.fn();
-    render(
-      <RunForm
-        buildTypes={BUILD_TYPES}
-        businessModels={BUSINESS_MODELS}
-        complexityLevels={LEVELS}
-        preferences={PREFS}
-        models={[
-          {
-            id: "m1",
-            model_id: "anthropic/claude-sonnet-4:online",
-            label: "Claude Sonnet 4 (web)",
-            is_default: false,
-          },
-          {
-            id: "m2",
-            model_id: "deepseek/deepseek-v4-flash:online",
-            label: "DeepSeek V4 Flash",
-            is_default: false,
-          },
-        ]}
-        selectedModel={null}
-        busy={false}
-        onStart={onStart}
-      />,
-    );
-
-    const modelSelect = screen.getByRole("combobox", { name: /model/i }) as HTMLSelectElement;
-    expect(modelSelect.value).toBe("");
-    expect(modelSelect.options[modelSelect.selectedIndex]?.text).not.toBe("Claude Sonnet 4 (web)");
-
+    expect(screen.queryByRole("combobox", { name: /which model/i })).toBeNull();
+    expect(screen.queryByText(/which model to run on/i)).toBeNull();
     await userEvent.selectOptions(screen.getByRole("combobox", { name: /build/i }), "micro-saas");
-    await userEvent.click(screen.getByRole("button", { name: "Run now" }));
-
-    // No model argument at all, so the server applies its own default — rather
-    // than the client sending something it never had.
-    expect(onStart).toHaveBeenCalledWith("micro-saas", 3, [], undefined, undefined);
+    await userEvent.click(screen.getByRole("button", { name: /run now/i }));
+    expect(onStart).toHaveBeenCalledWith("micro-saas", 3, [], undefined);
+  });
 });
 
 describe("business-model picker", () => {
@@ -486,8 +303,6 @@ describe("business-model picker", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={onStart}
       />,
@@ -498,7 +313,7 @@ describe("business-model picker", () => {
     expect(onStart).toHaveBeenCalledTimes(1);
     // 5th argument is business_model. Undefined, not "" — the api layer omits
     // the field entirely rather than sending an empty string.
-    expect(onStart.mock.calls[0][4]).toBeUndefined();
+    expect(onStart.mock.calls[0][3]).toBeUndefined();
   });
 
   it("passes the chosen key through", async () => {
@@ -509,8 +324,6 @@ describe("business-model picker", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={onStart}
       />,
@@ -519,7 +332,7 @@ describe("business-model picker", () => {
     await userEvent.selectOptions(screen.getByLabelText(/make money/i), "advertising");
     await userEvent.click(screen.getByRole("button", { name: /run/i }));
 
-    expect(onStart.mock.calls[0][4]).toBe("advertising");
+    expect(onStart.mock.calls[0][3]).toBe("advertising");
   });
 
   it("shows the description of the chosen model, and nothing when it has none", async () => {
@@ -529,8 +342,6 @@ describe("business-model picker", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -553,8 +364,6 @@ describe("business-model picker", () => {
         businessModels={BUSINESS_MODELS}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,
@@ -572,8 +381,6 @@ describe("business-model picker", () => {
         businessModels={[]}
         complexityLevels={LEVELS}
         preferences={PREFS}
-        models={[]}
-        selectedModel={null}
         busy={false}
         onStart={vi.fn()}
       />,

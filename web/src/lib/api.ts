@@ -47,7 +47,6 @@ export interface BusinessModel {
 export interface FormOptions {
   build_types: BuildType[]
   business_models: BusinessModel[]
-  models: ModelOption[]
   preferences: Preference[]
   complexity_levels: ComplexityLevel[]
   /** The founder's cadence, bootstrapped here rather than fetched separately
@@ -70,13 +69,6 @@ export interface Preference {
   label: string
 }
 
-export interface ModelOption {
-  id: string
-  model_id: string
-  label: string
-  is_default: boolean
-}
-
 export interface RunState {
   run_id: string
   status: RunStatus
@@ -84,7 +76,8 @@ export interface RunState {
   complexity: number
   complexity_label: string
   preferences: string[]
-  research_model?: string
+  /** The base model id every agent of this run used (no `:online`). */
+  research_model?: string | null
   // Echoed back by the server (app.py's `_run_state`) but not previously
   // typed here. Needed to replay a past run's settings when auto-starting a
   // fresh one for a returning founder (#50) — `null` means "no preference",
@@ -254,33 +247,16 @@ export function createApi(getIdToken: () => string | null | Promise<string | nul
 
   return {
     // One call replacing getBuildTypes/getBusinessModels/getComplexityLevels/
-    // getPreferences/getModels (#79). Those five endpoints still exist server-side
+    // getPreferences (#79). Those endpoints still exist server-side
     // and are still individually correct; nothing in this app calls them.
     getFormOptions: () => request<FormOptions>('GET', '/form-options'),
-    // The server returns an OBJECT — `{"research_model": "…"}` or
-    // `{"research_model": null}` — so unwrap it. This was typed as a bare
-    // `string | null` and `request<T>` casts blindly (`as T`), so TypeScript had
-    // nothing to check it against and the mismatch reached the founder:
-    // `selectedModel` became the object, an object is truthy, `modelId` became
-    // the object, no `<option value>` matched it so the browser displayed the
-    // FIRST model as if chosen, and submitting sent the object — which the API
-    // rejected with 422 `string_type`, `"input":{"research_model":null}`.
-    //
-    // So a founder who loaded the page and pressed Run now without touching the
-    // dropdown could not start a scout at all, and the form looked complete.
-    getLastUsedModel: async (): Promise<string | null> => {
-      const body = await request<{ research_model: string | null }>('GET', '/models/last-used')
-      return body?.research_model ?? null
-    },
     startRun: (
       build_type: string,
       complexity: number,
       preferences: string[] = [],
-      research_model?: string,
       business_model?: string,
     ) => {
       const body: Record<string, unknown> = { build_type, complexity, preferences }
-      if (research_model != null) body.research_model = research_model
       // Omitted rather than sent as null when the founder expressed no
       // preference: the server treats absent as "no preference" and an explicit
       // null would be a second way of saying the same thing.

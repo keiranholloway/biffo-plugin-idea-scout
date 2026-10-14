@@ -20,7 +20,6 @@ why the sidebar's ``GET /runs`` deliberately does not advance anything.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 from biffo_plugin_sdk import ForwardedUser, require_group
@@ -31,8 +30,6 @@ from pydantic import BaseModel, Field
 
 from .adapter import CoreHttpError, CoreHttpGateway
 from .definitions import (
-    DEFAULT_RESEARCH_MODEL,
-    DEFAULT_SYNTHESIS_MODEL,
     MAX_CADENCE_DAYS,
     MAX_COMPLEXITY,
     MIN_CADENCE_DAYS,
@@ -60,19 +57,9 @@ from .service import (
     RunNotFoundError,
     UnknownBuildTypeError,
     UnknownBusinessModelError,
-    UnknownModelError,
     UnknownPreferenceError,
 )
 from .transport import CoreTransport
-
-# Research runs on an OpenRouter ``:online`` model: the suffix attaches live web
-# results to the turn, so the search capability travels with the model id and
-# cannot be half-configured. The previous arrangement — a plain model plus the
-# ``web_search`` registry tool — failed open on a deployment with no Brave
-# credential: the tool was silently dropped and every run produced no findings.
-# Synthesis does not search; it reasons over what research hands it.
-_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
-_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL)
 
 #: The founder gate — verifies the shared-Cognito JWT and requires the group.
 #: The verified user carries its raw token, forwarded to Core by the transport.
@@ -87,8 +74,6 @@ def get_service(founder: ForwardedUser = Depends(require_founder)) -> IdeaScoutS
     transport = CoreTransport(founder_token=founder.token)
     return IdeaScoutService(
         CoreHttpGateway(transport),
-        research_model=_RESEARCH_MODEL,
-        synthesis_model=_SYNTHESIS_MODEL,
     )
 
 
@@ -114,9 +99,7 @@ async def _seed_agent_config() -> None:
     try:
         transport = CoreTransport(founder_token="")
         gateway = CoreHttpGateway(transport)
-        payload = seed_config_payloads(
-            research_model=_RESEARCH_MODEL, synthesis_model=_SYNTHESIS_MODEL
-        )
+        payload = seed_config_payloads()
         result = await gateway.seed_own_config(config=payload)
         created = sum(1 for r in result if r.get("created"))
         already_present = len(result) - created
@@ -147,7 +130,6 @@ _ERROR_STATUS: dict[type[IdeaScoutError], int] = {
     InvalidComplexityError: 422,
     InvalidCadenceError: 422,
     UnknownPreferenceError: 422,
-    UnknownModelError: 422,
     MalformedCandidatesError: 502,
     AgentConfigMissingError: 502,
 }
@@ -175,9 +157,6 @@ class StartRunRequest(BaseModel):
     # the service, not here — the same place the build type is checked, so both
     # rejections read the same way.
     preferences: list[str] = Field(default_factory=list, max_length=len(PREFERENCES))
-    # The catalog entry ID the founder chose for research agents. Optional;
-    # when not specified, the admin's configured model or built-in default is used.
-    research_model: str | None = None
     # How the founder wants the idea to make money. Optional and defaulted None:
     # unlike build_type this does NOT gate a run, because a founder may genuinely
     # have no preference and defaulting to one would scope every run from an input
@@ -251,10 +230,6 @@ def _business_model_json(m: Any) -> dict[str, Any]:
     return {"key": m.key, "label": m.label, "description": m.description}
 
 
-def _model_option_json(m: Any) -> dict[str, Any]:
-    return {"id": m.id, "model_id": m.model_id, "label": m.label, "is_default": m.is_default}
-
-
 def _preferences_json() -> list[dict[str, Any]]:
     return [dict(p) for p in PREFERENCES]
 
@@ -298,29 +273,6 @@ async def list_business_models(
     description for why.
     """
     return [_business_model_json(m) for m in await svc.list_business_models()]
-
-
-@app.get("/models")
-async def list_models(
-    founder: ForwardedUser = Depends(require_founder),
-    svc: IdeaScoutService = Depends(get_service),
-) -> list[dict]:
-    """The active, web-capable models founders can choose for research agents."""
-    return [_model_option_json(m) for m in await svc.list_model_catalog()]
-
-
-@app.get("/models/last-used")
-async def get_last_used_model(
-    founder: ForwardedUser = Depends(require_founder),
-    svc: IdeaScoutService = Depends(get_service),
-) -> dict:
-    """The catalog entry ID of this founder's most recently used model, if any.
-
-    Returns an ID (what ``POST /runs`` validates), not the stored model name, or
-    None if there is none or it has been withdrawn — callers then use the default.
-    Owner-scoped: only this founder's runs are considered.
-    """
-    return {"research_model": await svc.last_used_model_id(owner_sub=founder.sub)}
 
 
 @app.get("/preferences")
@@ -386,12 +338,10 @@ async def form_options(
     """
     build_types = await svc.list_build_types()
     business_models = await svc.list_business_models()
-    models = await svc.list_model_catalog()
     cadence = await svc.cadence_state(owner_sub=founder.sub)
     return {
         "build_types": [_build_type_json(t) for t in build_types],
         "business_models": [_business_model_json(m) for m in business_models],
-        "models": [_model_option_json(m) for m in models],
         "preferences": _preferences_json(),
         "complexity_levels": _complexity_levels_json(),
         "cadence": _cadence_json(cadence),
@@ -411,7 +361,6 @@ async def start_run(
         build_type=body.build_type,
         complexity=body.complexity,
         preferences=body.preferences,
-        research_model=body.research_model,
         business_model=body.business_model,
     )
     return _run_state(run)

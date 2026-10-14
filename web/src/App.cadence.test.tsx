@@ -90,7 +90,6 @@ const getFormOptions = vi.fn(() =>
   Promise.resolve({
     build_types: [{ key: 'micro-saas', label: 'MicroSaaS', description: null }],
     business_models: [],
-    models: [],
     preferences: [],
     complexity_levels: [{ value: 3, label: 'moderate' }],
     // The cadence arrives INSIDE the bootstrap, exactly as the real client
@@ -100,7 +99,6 @@ const getFormOptions = vi.fn(() =>
     cadence: served,
   }),
 )
-const getLastUsedModel = vi.fn(() => Promise.resolve(null))
 
 vi.mock('./lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api')>()
@@ -108,7 +106,6 @@ vi.mock('./lib/api', async (importOriginal) => {
     ...actual,
     createApi: () => ({
       getFormOptions: () => getFormOptions(),
-      getLastUsedModel: () => getLastUsedModel(),
       listRuns,
       getRun: vi.fn(),
       startRun,
@@ -142,7 +139,6 @@ const MAX_SETTLE_HOPS = 20
 const TRACKED_MOCKS = [
   getCurrentSession,
   getFormOptions,
-  getLastUsedModel,
   listRuns,
   startRun,
   getCadence,
@@ -233,7 +229,6 @@ describe('the cadence control (#50)', () => {
     // implementation along with it.
     getCurrentSession.mockClear()
     getFormOptions.mockClear()
-    getLastUsedModel.mockClear()
     listRuns.mockResolvedValue([run()])
     serve()
   })

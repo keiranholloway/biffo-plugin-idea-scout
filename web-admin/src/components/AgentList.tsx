@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { statusBadgeClass, statusLabel } from '@biffo/design-tokens/status.mjs'
-import type { ChatAgent } from '../lib/api'
+import type { AgentModelInfo, ChatAgent } from '../lib/api'
 import { ConfirmDelete } from './ConfirmDelete'
 
 type Row =
@@ -41,6 +41,10 @@ interface AgentListProps {
    * and the second in this plugin after #53.
    */
   loadFailed?: boolean
+  /** Each agent's effective model, web-search marker and drift, from `GET /model`. */
+  modelInfo?: AgentModelInfo[]
+  /** Re-applies the selected model (`PUT /model`), clearing drift. */
+  onReapplyModel?: () => void
   onUpdate: (key: string, updates: Partial<ChatAgent>) => void
   onDelete: (key: string) => void
   onStoreBuiltin: (agent: ChatAgent) => void
@@ -51,6 +55,8 @@ export function AgentList({
   agents,
   builtinAgents,
   loadFailed = false,
+  modelInfo = [],
+  onReapplyModel,
   onUpdate,
   onDelete,
   onStoreBuiltin,
@@ -67,7 +73,10 @@ export function AgentList({
 
   function handleSaveEdit() {
     if (!editingKey) return
-    onUpdate(editingKey, editForm)
+    // The model is never part of an agent edit: it is the one selected model.
+    const { model: _model, ...updates } = editForm
+    void _model
+    onUpdate(editingKey, updates)
     setEditingKey(null)
     setEditForm({})
   }
@@ -78,6 +87,7 @@ export function AgentList({
   }
 
   const rows = mergeAgentRows(agents, builtinAgents)
+  const infoFor = (key: string) => modelInfo.find((m) => m.agent_key === key)
 
   if (loadFailed) {
     // Deliberately NOT the empty state. The request failed; what is stored is
@@ -120,6 +130,7 @@ export function AgentList({
                 <p>
                   <strong>Role:</strong> {row.agent.role}
                 </p>
+                <ModelLine info={infoFor(row.agent.agent_key)} fallback={row.agent.model} />
                 <details>
                   <summary>System prompt (built-in)</summary>
                   <pre style={{ whiteSpace: 'pre-wrap', wordWrap: 'break-word' }}>
@@ -157,16 +168,6 @@ export function AgentList({
                       type="text"
                       value={editForm.role ?? ''}
                       onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
-                      disabled={busy}
-                    />
-                  </label>
-
-                  <label>
-                    Model:
-                    <input
-                      type="text"
-                      value={editForm.model ?? ''}
-                      onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
                       disabled={busy}
                     />
                   </label>
@@ -216,9 +217,21 @@ export function AgentList({
                     <p>
                       <strong>Role:</strong> {row.agent.role}
                     </p>
-                    <p>
-                      <strong>Model:</strong> {row.agent.model}
-                    </p>
+                    <ModelLine info={infoFor(row.agent.agent_key)} fallback={row.agent.model} />
+                    {infoFor(row.agent.agent_key)?.drift === true && (
+                      <p className="admin-error" role="status">
+                        This agent&apos;s stored model ({infoFor(row.agent.agent_key)?.stored_model})
+                        differs from the selected model.{' '}
+                        <button
+                          type="button"
+                          className="admin-btn-secondary"
+                          onClick={onReapplyModel}
+                          disabled={busy || onReapplyModel == null}
+                        >
+                          Re-apply selected model
+                        </button>
+                      </p>
+                    )}
                     <p>
                       <strong>Status:</strong>{' '}
                       <span className={statusBadgeClass(row.agent.active ? 'active' : 'inactive')}>
@@ -267,5 +280,20 @@ export function AgentList({
         )}
       </div>
     </>
+  )
+}
+
+/** The agent's effective model and its read-only web-search marker. Neither is
+ * editable here: the model is the one selected above, and web search is decided
+ * per agent in code. */
+function ModelLine({ info, fallback }: { info: AgentModelInfo | undefined; fallback: string }) {
+  const model = info?.effective_model ?? fallback
+  return (
+    <p>
+      <strong>Model:</strong> <code>{model}</code>{' '}
+      {info != null && (
+        <span className="badge-readonly">web search: {info.web_search ? 'on' : 'off'}</span>
+      )}
+    </p>
   )
 }

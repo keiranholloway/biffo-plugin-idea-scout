@@ -402,8 +402,7 @@ button:disabled {
 
 .badge-default,
 .badge-not-default,
-.badge-web-capable,
-.badge-not-web-capable {
+.badge-readonly {
   display: inline-block;
   padding: 0.2rem 0.5rem;
   border-radius: 3px;
@@ -423,14 +422,16 @@ button:disabled {
   color: var(--text-muted, #5b6070);
 }
 
-.badge-web-capable {
+.badge-readonly {
   background: #e8f4f8;
   color: #0c5a78;
 }
 
-.badge-not-web-capable {
-  background: var(--state-negative-soft, #fdeaea);
-  color: var(--state-negative, #8c2b2b);
+.admin-model-select {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
 }
 
 /* ── checkbox in forms ───────────────────────────────────────────────────── */

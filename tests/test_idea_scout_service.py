@@ -8,8 +8,6 @@ so most of these drive it by finishing scripted agent runs and then calling
 
 from __future__ import annotations
 
-import dataclasses
-
 import pytest
 from fakes import (
     FakeCoreGateway,
@@ -55,7 +53,7 @@ def _seed_core(core: FakeCoreGateway) -> None:
 
 
 def _service(core: FakeCoreGateway) -> IdeaScoutService:
-    return IdeaScoutService(core, research_model="research-m", synthesis_model="synthesis-m")
+    return IdeaScoutService(core)
 
 
 async def _start(core: FakeCoreGateway, *, owner_sub: str = OWNER, complexity: int = 3):
@@ -479,66 +477,21 @@ async def test_resolve_agent_raises_when_config_row_is_missing():
     assert "idea-scout-community" in str(exc_info.value)
 
 
-async def test_resolve_agent_uses_stored_config_when_present():
-    """When a row exists, its prompt and model are used."""
+async def test_resolve_agent_uses_stored_prompt_and_the_selected_model():
+    """The prompt is the stored one; the model is the selected base through the
+    helper, never the stored row's model."""
     core = FakeCoreGateway(
         configs={
-            "idea-scout-community": {
-                "system_prompt": "Custom prompt",
-                "model": "custom-model-slug",
-            }
+            "idea-scout-community": {"system_prompt": "Custom prompt", "model": "stale-model"},
+            "idea-scout-synthesis": {"system_prompt": "Rank", "model": "stale-model"},
         }
     )
     svc = _service(core)
 
-    instructions, model = await svc._resolve_agent("idea-scout-community", "fallback-model")
-
-    assert instructions == "Custom prompt"
-    assert model == "custom-model-slug"
-
-
-async def test_research_agent_config_overridden_by_chosen_model_slug():
-    """The founder's chosen model overrides the stored model for research agents only."""
-    core = FakeCoreGateway(
-        configs={
-            "idea-scout-community": {
-                "system_prompt": "Stored prompt",
-                "model": "stored-model",
-            }
-        }
-    )
-    svc = _service(core)
-
-    instructions, model = await svc._resolve_agent(
-        "idea-scout-community",
-        "fallback-model",
-        chosen_model_slug="founder-chosen-model",
-    )
-
-    assert instructions == "Stored prompt"
-    assert model == "founder-chosen-model"
-
-
-async def test_synthesis_agent_config_not_overridden_by_chosen_model_slug():
-    """The founder's chosen model does NOT override the stored model for synthesis."""
-    core = FakeCoreGateway(
-        configs={
-            "idea-scout-synthesis": {
-                "system_prompt": "Synthesis prompt",
-                "model": "synthesis-model",
-            }
-        }
-    )
-    svc = _service(core)
-
-    instructions, model = await svc._resolve_agent(
-        "idea-scout-synthesis",
-        "fallback-model",
-        chosen_model_slug="founder-chosen-model",
-    )
-
-    assert instructions == "Synthesis prompt"
-    assert model == "synthesis-model"  # not overridden
+    instructions, model = await svc._resolve_agent("idea-scout-community", "x/base")
+    assert (instructions, model) == ("Custom prompt", "x/base:online")
+    _, model = await svc._resolve_agent("idea-scout-synthesis", "x/base")
+    assert model == "x/base"
 
 
 async def test_a_completed_run_is_not_re_synthesised_on_further_polls():
@@ -586,9 +539,8 @@ async def test_a_configured_prompt_and_model_override_the_built_in_default():
 
     first = core.requested[0]["definition"]
     assert first["instructions"] == "A custom brief."
-    assert first["model"] == "custom-model"
-    # Unconfigured roles still get the built-in default and the module's model.
-    assert core.requested[1]["definition"]["model"] == "research-m"
+    # The model is the selected one, not the row's hand-entered value.
+    assert first["model"] == "anthropic/claude-sonnet-5.5:online"
 
 
 async def test_the_built_in_default_is_used_when_nothing_is_configured():
@@ -798,209 +750,64 @@ async def test_the_never_started_message_tells_the_founder_it_cost_nothing():
     assert "nothing was charged" in (state.failure_reason or "").lower()
 
 
-# ── Model catalog (M1) ───────────────────────────────────────────────────────
+# ── One selected model drives every agent ────────────────────────────────────
 
 
-_MODEL_CATALOG = [
-    m.ModelCatalogEntry(
-        id="m1",
-        model_id="openai/gpt-4:online",
-        label="GPT-4",
-        active=True,
-        is_default=True,
-        web_capable=True,
-    ),
-    m.ModelCatalogEntry(
-        id="m2",
-        model_id="anthropic/claude-opus:online",
-        label="Claude Opus",
-        active=True,
-        is_default=False,
-        web_capable=True,
-    ),
-    m.ModelCatalogEntry(
-        id="m3",
-        model_id="anthropic/claude-sonnet",
-        label="Claude Sonnet",
-        active=True,
-        is_default=False,
-        web_capable=False,
-    ),
-    m.ModelCatalogEntry(
-        id="m4",
-        model_id="anthropic/claude-haiku:online",
-        label="Claude Haiku",
-        active=False,
-        is_default=False,
-        web_capable=True,
-    ),
-]
+def _catalog_with_default(model_id: str) -> list[m.ModelCatalogEntry]:
+    return [
+        m.ModelCatalogEntry(id="c1", model_id=model_id, label="M", active=True, is_default=True),
+        m.ModelCatalogEntry(id="c2", model_id="o/other", label="O", active=True),
+        m.ModelCatalogEntry(
+            id="c3", model_id="legacy/x:online", label="L", active=True, is_default=False
+        ),
+    ]
 
 
-async def test_a_model_without_web_capability_is_rejected():
-    """Research agents need OpenRouter's :online suffix for web search capability.
-    A model marked not web_capable cannot be used for research."""
-    from idea_scout.service import UnknownModelError
-
+async def test_selected_model_drives_research_and_the_run_records_the_base():
     core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
+    core.model_catalog = _catalog_with_default("m/sel")
+    _seed_core(core)
+    for cfg in core.configs.values():
+        cfg["model"] = "hand/entered:online"
 
-    with pytest.raises(UnknownModelError):
-        await _service(core).start_run(
-            owner_sub=OWNER,
-            build_type="micro-saas",
-            complexity=3,
-            research_model="m3",  # web_capable=False
+    run = await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+
+    models = [r["definition"]["model"] for r in core.requested]
+    assert len(models) == 3
+    assert set(models) == {"m/sel:online"}
+    assert run.research_model == "m/sel"
+
+
+async def test_no_selected_model_falls_back_to_the_builtin_default():
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    _seed_core(core)
+
+    run = await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+
+    assert run.research_model == "anthropic/claude-sonnet-5.5"
+    assert {r["definition"]["model"] for r in core.requested} == {
+        "anthropic/claude-sonnet-5.5:online"
+    }
+
+
+async def test_a_legacy_colon_default_is_never_selected():
+    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
+    core.model_catalog = [
+        m.ModelCatalogEntry(
+            id="c3", model_id="legacy/x:online", label="L", active=True, is_default=True
         )
-
-
-async def test_an_inactive_model_is_rejected():
-    """Admin withdrew an inactive model; it should not be usable."""
-    from idea_scout.service import UnknownModelError
-
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-
-    with pytest.raises(UnknownModelError):
-        await _service(core).start_run(
-            owner_sub=OWNER,
-            build_type="micro-saas",
-            complexity=3,
-            research_model="m4",  # active=False
-        )
-
-
-async def test_an_unknown_model_is_rejected():
-    """A model id not in the catalog cannot be used."""
-    from idea_scout.service import UnknownModelError
-
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-
-    with pytest.raises(UnknownModelError):
-        await _service(core).start_run(
-            owner_sub=OWNER,
-            build_type="micro-saas",
-            complexity=3,
-            research_model="invented-model",
-        )
-
-
-async def test_founders_chosen_model_beats_the_admin_row():
-    """When a founder specifies research_model, it overrides the admin config."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-    # Override only the first research agent, but seed all agents first
-    _seed_core(core)
-    core.configs["idea-scout-community"]["model"] = "admin-model"
-
-    await _service(core).start_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-        research_model="m1",
-    )
-
-    # Check that the requested agent runs use the founder's chosen model
-    for request in core.requested:
-        if request["agent_name"] in RESEARCH_AGENT_NAMES:
-            assert request["definition"]["model"] == "openai/gpt-4:online"
-
-
-async def test_admin_row_model_beats_builtin_default():
-    """When no founder choice, but admin config exists, use the admin model."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = []  # no usable catalog default: the agent row decides
-    # Seed all agents first, then override the research agents' models
-    _seed_core(core)
-    for role in RESEARCH_AGENT_NAMES:
-        core.configs[role]["model"] = "admin-model"
-
-    await _service(core).start_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-    )
-
-    # Check that the requested agent runs use the admin model
-    for request in core.requested:
-        if request["agent_name"] in RESEARCH_AGENT_NAMES:
-            assert request["definition"]["model"] == "admin-model"
-
-
-async def test_builtin_default_used_when_neither_founder_choice_nor_admin_row():
-    """When no founder choice and no admin override, use the seeded default model."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = []  # no usable catalog default: the agent row decides
-    _seed_core(core)  # Seeds with the service's default research model
-
-    await _service(core).start_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-    )
-
-    # Check that the requested agent runs use the service's default research model
-    for request in core.requested:
-        if request["agent_name"] in RESEARCH_AGENT_NAMES:
-            assert request["definition"]["model"] == "research-m"
-
-
-async def test_research_model_is_recorded_on_the_run():
-    """The chosen research_model's slug is stored so it can be displayed to the founder."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
+    ]
     _seed_core(core)
 
-    run = await _service(core).start_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-        research_model="m2",
-    )
+    run = await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
 
-    # run.research_model should be the resolved model_id slug, not the catalog entry id
-    assert run.research_model == "anthropic/claude-opus:online"
+    assert run.research_model == "anthropic/claude-sonnet-5.5"
 
 
-async def test_research_model_none_when_not_specified():
-    """When founder doesn't choose a model, research_model is None."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-    _seed_core(core)
+def test_start_run_no_longer_accepts_research_model():
+    import inspect
 
-    run = await _service(core).start_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-    )
-
-    assert run.research_model is None
-
-
-async def test_founder_choice_reaches_all_three_research_agents_but_not_synthesis():
-    """The founder's model choice affects ONLY the research agents, not synthesis."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-    _seed_core(core)
-
-    await _service(core).start_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-        research_model="m1",
-    )
-
-    research_requests = [r for r in core.requested if r["agent_name"] in RESEARCH_AGENT_NAMES]
-    synthesis_requests = [r for r in core.requested if r["agent_name"] == "idea-scout-synthesis"]
-
-    # All three research agents get the founder's model
-    assert len(research_requests) == 3
-    for req in research_requests:
-        assert req["definition"]["model"] == "openai/gpt-4:online"
-
-    # Synthesis still gets the built-in/admin default, NOT the founder's choice
-    assert len(synthesis_requests) == 0  # Synthesis is fired by the engine, not here
+    assert "research_model" not in inspect.signature(IdeaScoutService.start_run).parameters
 
 
 # ── Business model (optional run scoping) ────────────────────────────────────
@@ -1091,25 +898,6 @@ def test_tool_call_arguments_survives_deeply_nested_json() -> None:
     assert _tool_call_arguments(messages, "submit") is None
 
 
-async def test_last_used_model_id_is_none_when_no_run_remembers_a_model():
-    """No prior run (or none with a stored model) means nothing to replay."""
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-    _seed_core(core)
-
-    assert await _service(core).last_used_model_id(owner_sub=OWNER) is None
-
-
-async def test_last_used_model_id_maps_the_stored_name_back_to_a_catalog_id():
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-    _seed_core(core)
-    svc = _service(core)
-    await svc.start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3, research_model="m2")
-
-    assert await svc.last_used_model_id(owner_sub=OWNER) == "m2"
-
-
 def test_parse_timestamp_returns_none_for_an_empty_value():
     from idea_scout.service import _parse_timestamp
 
@@ -1124,54 +912,3 @@ def _research_models(core):
     return [
         r["definition"]["model"] for r in core.requested if r["agent_name"] in RESEARCH_AGENT_NAMES
     ]
-
-
-async def test_no_research_model_uses_the_catalog_default_not_the_agent_row():
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = _MODEL_CATALOG
-    _seed_core(core)
-    for cfg in core.configs.values():
-        cfg["model"] = "anthropic/claude-sonnet-4:online"
-
-    await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
-
-    models = _research_models(core)
-    assert len(models) == 3
-    assert set(models) == {"openai/gpt-4:online"}
-
-
-async def test_no_usable_catalog_default_falls_back_to_the_agent_row():
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = [dataclasses.replace(e, is_default=False) for e in _MODEL_CATALOG]
-    _seed_core(core)
-    for cfg in core.configs.values():
-        cfg["model"] = "row-model"
-
-    await _service(core).start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
-
-    assert set(_research_models(core)) == {"row-model"}
-
-
-async def test_replay_of_a_withdrawn_model_runs_on_the_catalog_default():
-    core = FakeCoreGateway(build_types=[_BUILD_TYPE])
-    core.model_catalog = [e for e in _MODEL_CATALOG if e.id != "m2"]
-    _seed_core(core)
-    svc = _service(core)
-    # Remembered model m2 was withdrawn: last-used resolves to None, replay sends no model.
-    await core.create_run(
-        owner_sub=OWNER,
-        build_type="micro-saas",
-        complexity=3,
-        profile_snapshot={},
-        preferences=[],
-        research_run_ids=[],
-        chain_id="c",
-        business_model=None,
-        research_model="anthropic/claude-opus:online",
-    )
-    assert await svc.last_used_model_id(owner_sub=OWNER) is None
-    core.requested.clear()
-
-    await svc.start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
-
-    assert set(_research_models(core)) == {"openai/gpt-4:online"}

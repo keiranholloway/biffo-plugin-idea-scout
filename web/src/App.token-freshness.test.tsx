@@ -33,7 +33,6 @@ vi.mock("./lib/api", async (importOriginal) => {
           Promise.resolve({
             build_types: [],
             business_models: [],
-            models: [],
             preferences: [],
             complexity_levels: [],
       cadence: {
@@ -45,7 +44,6 @@ vi.mock("./lib/api", async (importOriginal) => {
         is_due: false,
       },
           }),
-        getLastUsedModel: () => Promise.resolve(null),
         listRuns: () => Promise.resolve([]),
       };
     },

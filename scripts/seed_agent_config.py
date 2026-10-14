@@ -24,30 +24,18 @@ from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from idea_scout.definitions import (  # noqa: E402
-    DEFAULT_RESEARCH_MODEL,
-    DEFAULT_SYNTHESIS_MODEL,
-    seed_config_payloads,
-)
+from idea_scout.definitions import seed_config_payloads  # noqa: E402
 
 _CHAT_AGENTS_PATH = "/api/v1/admin/plugins/idea-scout/chat-agents"
-
-# Environment overrides the built-in defaults, but always fall back to the
-# constants in definitions.py, not a separate hardcoded copy. This ensures
-# the seed, admin_app, and app.py all use the same values.
-_DEFAULT_RESEARCH_MODEL = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
-_DEFAULT_SYNTHESIS_MODEL = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL)
 
 
 def payloads() -> list[dict[str, Any]]:
     """One row per agent role, built by the shared payload builder.
 
-    Uses environment overrides if set, falling back to the built-in constants.
+    Models are the effective models of the built-in default selection; the
+    admin's single model choice (``PUT /model``) replaces them.
     """
-    return seed_config_payloads(
-        research_model=_DEFAULT_RESEARCH_MODEL,
-        synthesis_model=_DEFAULT_SYNTHESIS_MODEL,
-    )
+    return seed_config_payloads()
 
 
 def _request(method: str, url: str, token: str, body: dict | None = None) -> Any:

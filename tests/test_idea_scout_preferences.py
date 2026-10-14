@@ -27,7 +27,7 @@ OWNER = "founder-sub-abc"
 
 
 def _service(core: FakeCoreGateway) -> IdeaScoutService:
-    return IdeaScoutService(core, research_model="research-m", synthesis_model="synthesis-m")
+    return IdeaScoutService(core)
 
 
 def _seed_core(core: FakeCoreGateway) -> None:

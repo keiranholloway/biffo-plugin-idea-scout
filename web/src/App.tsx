@@ -14,7 +14,6 @@ import {
   type Cadence,
   type Candidate,
   type ComplexityLevel,
-  type ModelOption,
   type Preference,
   type RunState,
 } from "./lib/api";
@@ -46,8 +45,6 @@ export default function App() {
   const [complexityLevels, setComplexityLevels] = useState<ComplexityLevel[]>(
     [],
   );
-  const [models, setModels] = useState<ModelOption[]>([]);
-  const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [runs, setRuns] = useState<RunState[]>([]);
   // The founder's own cadence preference plus the server's derived `is_due`.
   // `null` until the first load answers — the control is not rendered before
@@ -103,7 +100,7 @@ export default function App() {
 
   useEffect(() => {
     if (signedIn !== true) return;
-    // THREE requests, and the count is load-bearing rather than incidental:
+    // TWO requests, and the count is load-bearing rather than incidental:
     // every `/api/v1/plugins/idea-scout/*` request is served by the shared
     // plugin host, which then calls Core, so each costs TWO Lambda
     // invocations. Five separate calls once asked for ~10 against an account
@@ -113,15 +110,13 @@ export default function App() {
     // The cadence is therefore bootstrapped inside `/form-options` rather than
     // fetched as a fourth call. Anything else this page comes to need on mount
     // belongs there too.
-    void Promise.all([api.getFormOptions(), api.getLastUsedModel(), api.listRuns()])
-      .then(([options, lastUsed, existing]) => {
+    void Promise.all([api.getFormOptions(), api.listRuns()])
+      .then(([options, existing]) => {
         const currentCadence = options.cadence;
         setBuildTypes(options.build_types);
         setBusinessModels(options.business_models);
         setComplexityLevels(options.complexity_levels);
         setPreferences(options.preferences);
-        setModels(options.models);
-        setSelectedModel(lastUsed);
         setRuns(existing);
         setCadence(currentCadence);
         setLoaded(true);
@@ -158,9 +153,6 @@ export default function App() {
             mostRecent.build_type,
             mostRecent.complexity,
             mostRecent.preferences,
-            // Runs store the model NAME; start_run validates catalog IDs, so
-            // replay the catalog ID from /models/last-used (null → default).
-            lastUsed ?? undefined,
             mostRecent.business_model ?? undefined,
             { ageDays: ageInDays(mostRecent.created_at) },
           );
@@ -220,20 +212,13 @@ export default function App() {
     buildType: string,
     complexity: number,
     prefs: string[] = [],
-    research_model?: string,
     business_model?: string,
     autoTrigger?: AutoStartTrigger,
   ) {
     setStarting(true);
     setError(null);
     try {
-      const run = await api.startRun(
-        buildType,
-        complexity,
-        prefs,
-        research_model,
-        business_model,
-      );
+      const run = await api.startRun(buildType, complexity, prefs, business_model);
       setCurrent(run);
       setCandidates([]);
       setRuns(await api.listRuns());
@@ -383,11 +368,9 @@ export default function App() {
             businessModels={businessModels}
             complexityLevels={complexityLevels}
             preferences={preferences}
-            models={models}
-            selectedModel={selectedModel}
             busy={starting}
-            onStart={(type, complexity, prefs, model, bizModel) =>
-              void startRun(type, complexity, prefs, model, bizModel)
+            onStart={(type, complexity, prefs, bizModel) =>
+              void startRun(type, complexity, prefs, bizModel)
             }
           />
         ) : current == null ? null : (
@@ -398,9 +381,7 @@ export default function App() {
               </span>
               <span className="run-complexity">{current.complexity_label}</span>
               {current.research_model != null && (
-                <span className="run-model">
-                  {modelLabel(models, current.research_model)}
-                </span>
+                <span className="run-model">{current.research_model}</span>
               )}
               <button type="button" onClick={() => setCurrent(null)}>
                 New scout
@@ -457,16 +438,6 @@ export default function App() {
  */
 function typeLabel(buildTypes: BuildType[], key: string): string {
   return buildTypes.find((type) => type.key === key)?.label ?? key;
-}
-
-/** The model's human label, falling back to its id.
- *
- * Runs store the model `id`; only the models list knows its label. The fallback
- * matters: a run started against a model an admin has since removed still has to
- * render as something.
- */
-function modelLabel(models: ModelOption[], id: string): string {
-  return models.find((model) => model.id === id)?.label ?? id;
 }
 
 function runStatusKey(run: RunState): string {

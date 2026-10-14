@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import type {
   BuildType,
   BusinessModel,
   ComplexityLevel,
-  ModelOption,
   Preference,
 } from '../lib/api'
 
@@ -13,16 +12,14 @@ import type {
  * Both lists come from the API rather than being hardcoded here. Build types are
  * admin-managed, and the complexity wording is served so that the words a founder
  * reads on the slider are the words the research agents are briefed with — two
- * copies would drift and this one would be the wrong one. Models are admin-curated;
- * the founder picks which to run agents on.
+ * copies would drift and this one would be the wrong one. The model is not a
+ * founder choice: the admin picks one for every agent, and each run records it.
  */
 export function RunForm({
   buildTypes,
   businessModels,
   complexityLevels,
   preferences,
-  models,
-  selectedModel,
   busy,
   onStart,
 }: {
@@ -30,14 +27,11 @@ export function RunForm({
   businessModels: BusinessModel[]
   complexityLevels: ComplexityLevel[]
   preferences: Preference[]
-  models: ModelOption[]
-  selectedModel: string | null
   busy: boolean
   onStart: (
     buildType: string,
     complexity: number,
     preferences: string[],
-    research_model?: string,
     business_model?: string,
   ) => void
 }) {
@@ -51,19 +45,6 @@ export function RunForm({
   // result from an input the founder never made — the invisible-input failure
   // this plugin has already had twice (#26, #29).
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set())
-  const [modelId, setModelId] = useState<string>('')
-
-  // Initialize or update the selected model: last-used, then default, then empty
-  useEffect(() => {
-    const defaultModel = findDefaultModel(models)
-    if (selectedModel) {
-      setModelId(selectedModel)
-    } else if (defaultModel) {
-      setModelId(defaultModel.id)
-    } else {
-      setModelId('')
-    }
-  }, [selectedModel, models])
 
   const selected = buildTypes.find((t) => t.key === buildType)
   const selectedModelKind = businessModels.find((m) => m.key === businessModel)
@@ -89,17 +70,10 @@ export function RunForm({
       onSubmit={(event) => {
         event.preventDefault()
         if (buildType !== '') {
-          // Both trailing arguments are optional and independent. `undefined`
-          // rather than `''` for an unmade choice, so the api layer omits the
-          // field entirely instead of sending an empty string the server would
-          // have to interpret.
-          onStart(
-            buildType,
-            complexity,
-            [...chosen],
-            modelId || undefined,
-            businessModel || undefined,
-          )
+          // `undefined` rather than `''` for an unmade choice, so the api layer
+          // omits the field entirely instead of sending an empty string the
+          // server would have to interpret.
+          onStart(buildType, complexity, [...chosen], businessModel || undefined)
         }
       }}
     >
@@ -163,36 +137,6 @@ export function RunForm({
         </span>
       </label>
 
-      {models.length > 0 && (
-        <label className="field">
-          <span className="field-label">Which model to run on?</span>
-          <select
-            value={modelId}
-            onChange={(event) => setModelId(event.target.value)}
-            disabled={busy}
-          >
-            {/* An explicit unselected option, so the select can never DISPLAY a
-                model it has not got. A `<select>` whose value matches no option
-                renders the first one, which is how a founder saw "Claude Sonnet 4
-                (web)" while the state was empty. That is the same
-                shows-a-value-it-does-not-have shape as the empty-vs-error
-                conflations already fixed in this plugin (#53, #69) — and here it
-                also blocked the run. Reachable whenever there is no last-used
-                model and no catalog entry flagged `is_default`. */}
-            <option value="">
-              {findDefaultModel(models)
-                ? `Use the default (${findDefaultModel(models)?.label})`
-                : 'Use the built-in default'}
-            </option>
-            {models.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-
       {preferences.length > 0 && (
         <fieldset className="preferences" disabled={busy}>
           <legend className="field-label">What matters to you? (optional)</legend>
@@ -240,8 +184,4 @@ export function RunForm({
       </p>
     </form>
   )
-}
-
-function findDefaultModel(models: ModelOption[]): ModelOption | null {
-  return models.find((m) => m.is_default) ?? null
 }
