@@ -124,3 +124,23 @@ def test_a_failed_catalog_create_exits_nonzero(monkeypatch, capsys):
     monkeypatch.setattr(script, "_request", fake)
     assert script.main() == 1
     assert "Failed on" in capsys.readouterr().err
+
+
+def test_agent_config_seed_tolerates_409_and_fails_on_other_errors(monkeypatch, capsys):
+    script = load_script("seed_agent_config")
+    monkeypatch.setenv("CORE_API_URL", "http://api")
+    monkeypatch.setenv("ADMIN_BEARER_TOKEN", "tok")
+    monkeypatch.setattr("sys.argv", ["seed_agent_config.py"])
+
+    def conflict(*_a, **_k):
+        raise _http_error(409)
+
+    monkeypatch.setattr(script, "_request", conflict)
+    assert script.main() == 0
+
+    def boom(*_a, **_k):
+        raise _http_error(500)
+
+    monkeypatch.setattr(script, "_request", boom)
+    assert script.main() == 1
+    assert "Failed on" in capsys.readouterr().err

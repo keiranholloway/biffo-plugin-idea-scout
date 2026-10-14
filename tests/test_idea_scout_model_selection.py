@@ -29,7 +29,7 @@ class FakeBackend:
     def __init__(self, catalog: list[dict[str, Any]], agents: dict[str, str] | None = None):
         self.catalog = catalog
         self.agents = dict(agents or {})
-        self.writes: list[tuple[str, Any]] = []
+        self.writes: list[tuple[Any, ...]] = []
         self.seeded: list[str] = []
 
     async def list_catalog(self):
@@ -45,7 +45,7 @@ class FakeBackend:
             if str(r["id"]) == row_id:
                 r.update(fields)
 
-    async def get_agent_models(self):
+    async def get_agent_models(self) -> dict[str, str | None]:
         return dict(self.agents)
 
     async def seed_agents(self, payloads):
@@ -227,3 +227,26 @@ def test_seeded_rows_carry_the_built_in_prompts():
     asyncio.run(ms.apply_selection(backend, "a/one"))
     assert set(backend.seeded) == set(ALL_AGENT_NAMES)
     assert all(n in DEFAULT_INSTRUCTIONS for n in backend.seeded)
+
+
+def test_effective_for_agent_is_none_for_an_unknown_agent():
+    backend = FakeBackend([_row("c1", "a/one", default=True)])
+    assert asyncio.run(ms.effective_for_agent(backend, "not-an-agent")) is None
+    assert asyncio.run(ms.effective_for_agent(backend, RESEARCH_AGENT_NAMES[0])) == "a/one:online"
+
+
+def test_request_backend_skips_agent_rows_the_seed_route_reports_missing():
+    class MissingError(Exception):
+        pass
+
+    present = ALL_AGENT_NAMES[0]
+
+    async def request(method, path, **_kw):
+        if path.endswith(f"/{present}"):
+            return {"model": "m"}
+        raise MissingError
+
+    backend = ms.RequestBackend(
+        request, catalog_path="/c", agents_path="/a", seed_path="/s", not_found=MissingError
+    )
+    assert asyncio.run(backend.get_agent_models()) == {present: "m"}
