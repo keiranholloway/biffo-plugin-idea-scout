@@ -35,7 +35,6 @@ vi.mock("./lib/api", async (importOriginal) => {
         Promise.resolve({
           build_types: [{ key: "micro-saas", label: "MicroSaaS", description: null }],
           business_models: [],
-          models: [],
           preferences: [],
           complexity_levels: [{ value: 3, label: "moderate" }],
           cadence: {
@@ -47,7 +46,6 @@ vi.mock("./lib/api", async (importOriginal) => {
             is_due: false,
           },
         }),
-      getLastUsedModel: () => Promise.resolve(null),
       getCandidates,
       startPrd,
       getPrd,

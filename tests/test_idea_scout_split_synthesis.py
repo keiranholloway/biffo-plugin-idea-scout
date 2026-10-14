@@ -88,7 +88,7 @@ def _service(core: FakeCoreGateway) -> IdeaScoutService:
         core.configs.setdefault(
             row["role"], {"system_prompt": row["system_prompt"], "model": row["model"]}
         )
-    return IdeaScoutService(core, research_model="research-m", synthesis_model="synthesis-m")
+    return IdeaScoutService(core)
 
 
 def _call(tool: str, args: dict[str, Any]) -> list[dict[str, Any]]:

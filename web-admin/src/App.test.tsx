@@ -4,7 +4,7 @@
  * M2 adds three features:
  * - Tab switching: each tab pane renders its content
  * - Agents tab: edit admin-configured prompts for five agent roles
- * - Models tab: CRUD the model catalog with web_capable visibility
+ * - Models tab: CRUD the model catalog of base ids
  */
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -27,6 +27,8 @@ const listModelCatalog = vi.fn()
 const createModelCatalogEntry = vi.fn()
 const updateModelCatalogEntry = vi.fn()
 const deleteModelCatalogEntry = vi.fn()
+const getModelSelection = vi.fn()
+const setModelSelection = vi.fn()
 
 const getFreshIdToken = vi.fn(() => Promise.resolve('test-token'))
 
@@ -62,6 +64,8 @@ vi.mock('./lib/api', async (importOriginal) => {
       createModelCatalogEntry,
       updateModelCatalogEntry,
       deleteModelCatalogEntry,
+      getModelSelection,
+      setModelSelection,
       }
     },
   }
@@ -160,11 +164,10 @@ const BUILTIN_SYNTHESIS_AGENT = {
 
 const MODEL_WEB_CAPABLE = {
   id: 'model1',
-  model_id: 'anthropic/claude-opus:online',
+  model_id: 'anthropic/claude-opus',
   label: 'Claude Opus (Web)',
   active: true,
   is_default: true,
-  web_capable: true,
 }
 
 const MODEL_NOT_WEB_CAPABLE = {
@@ -173,7 +176,34 @@ const MODEL_NOT_WEB_CAPABLE = {
   label: 'Claude Opus (No Web)',
   active: true,
   is_default: false,
-  web_capable: false,
+}
+
+const AGENT_KEYS: Array<[string, boolean]> = [
+  ['idea-scout-community', true],
+  ['idea-scout-narrative', true],
+  ['idea-scout-competitive', true],
+  ['idea-scout-synthesis', false],
+  ['idea-scout-candidate-writer', false],
+  ['idea-scout-prd-interviewer', false],
+  ['idea-scout-prd-writer', false],
+]
+
+function selectionFor(base: string, drift: string[] = []) {
+  return {
+    selected_model_id: base,
+    options: [
+      { id: 'model1', model_id: 'anthropic/claude-opus', label: 'Claude Opus' },
+      { id: 'model2', model_id: 'moonshotai/kimi-k3', label: 'Kimi K3 (open-weight)' },
+    ],
+    agents: AGENT_KEYS.map(([agent_key, web]) => ({
+      agent_key,
+      effective_model: web ? `${base}:online` : base,
+      stored_model: drift.includes(agent_key) ? 'hand/entered:online' : web ? `${base}:online` : base,
+      web_search: web,
+      stored: true,
+      drift: drift.includes(agent_key),
+    })),
+  }
 }
 
 describe('Idea Scout admin panel', () => {
@@ -197,6 +227,8 @@ describe('Idea Scout admin panel', () => {
     updateChatAgent.mockReset().mockResolvedValue(RESEARCH_AGENT)
     deleteChatAgent.mockReset()
     listModelCatalog.mockReset().mockResolvedValue([MODEL_WEB_CAPABLE, MODEL_NOT_WEB_CAPABLE])
+    getModelSelection.mockReset().mockResolvedValue(selectionFor('anthropic/claude-opus'))
+    setModelSelection.mockReset()
     createModelCatalogEntry.mockReset().mockResolvedValue(MODEL_WEB_CAPABLE)
     updateModelCatalogEntry.mockReset().mockResolvedValue(MODEL_WEB_CAPABLE)
     deleteModelCatalogEntry.mockReset()
@@ -533,80 +565,117 @@ describe('Idea Scout admin panel', () => {
   })
 
   describe('Models tab', () => {
-    it('lists all models with web_capable status', async () => {
+    it('lists the catalog models', async () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
-      await user.click(modelsTab)
+      await user.click(await screen.findByRole('tab', { name: /^Models$/i }))
 
       await waitFor(() => {
         expect(screen.getByText('Claude Opus (Web)')).toBeTruthy()
         expect(screen.getByText('Claude Opus (No Web)')).toBeTruthy()
       })
+      expect(screen.queryByText(/web capable/i)).toBeNull()
     })
 
-    it('shows web_capable status visibly in the list', async () => {
+    it('rejects a model id containing a colon without calling the API', async () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
-      await user.click(modelsTab)
+      await user.click(await screen.findByRole('tab', { name: /^Models$/i }))
+      await user.click(await screen.findByRole('button', { name: /Add.*Model/i }))
+      const inputs = screen.getAllByRole('textbox')
+      await user.type(inputs[0], 'foo/bar:online')
+      await user.type(inputs[1], 'Foo')
+      expect(screen.queryByText(/web capable/i)).toBeNull()
+      await user.click(screen.getByRole('button', { name: /Create/i }))
 
-      await waitFor(() => {
-        // Look for visual indication of web-capable status
-        const badges = screen.getAllByText(/web/i)
-        expect(badges.length).toBeGreaterThan(0)
-      })
+      expect(await screen.findByRole('alert')).toHaveTextContent(/cannot contain ':'/i)
+      expect(createModelCatalogEntry).not.toHaveBeenCalled()
     })
 
-    it('renders web_capable field in the create form', async () => {
+    it('creates a model with a base id', async () => {
       const user = userEvent.setup()
       render(<App />)
 
-      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
-      await user.click(modelsTab)
-
-      const addButton = await screen.findByRole('button', { name: /Add.*Model/i })
-      await user.click(addButton)
-
-      await waitFor(() => {
-        // Look for a web_capable or web-capable checkbox/field
-        const labels = screen.getAllByText(/web/i)
-        expect(labels.length).toBeGreaterThan(0)
-      })
-    })
-
-    it('allows setting web_capable when creating a model', async () => {
-      const user = userEvent.setup()
-      render(<App />)
-
-      const modelsTab = await screen.findByRole('tab', { name: /^Models$/i })
-      await user.click(modelsTab)
-
-      const addButton = await screen.findByRole('button', { name: /Add.*Model/i })
-      await user.click(addButton)
-
-      // Fill in the form with web_capable checked
+      await user.click(await screen.findByRole('tab', { name: /^Models$/i }))
+      await user.click(await screen.findByRole('button', { name: /Add.*Model/i }))
       const inputs = screen.getAllByRole('textbox')
       await user.type(inputs[0], 'anthropic/claude-3')
       await user.type(inputs[1], 'Claude 3')
-
-      const checkboxes = screen.getAllByRole('checkbox')
-      const webCapableCheckbox = checkboxes.find((cb) => {
-        const label = cb.closest('label')
-        return label?.textContent?.toLowerCase().includes('web')
-      })
-
-      if (webCapableCheckbox) {
-        await user.click(webCapableCheckbox)
-      }
-
-      const submitButton = screen.getByRole('button', { name: /Create/i })
-      await user.click(submitButton)
+      await user.click(screen.getByRole('button', { name: /Create/i }))
 
       await waitFor(() => {
-        expect(createModelCatalogEntry).toHaveBeenCalled()
+        expect(createModelCatalogEntry).toHaveBeenCalledWith(
+          expect.objectContaining({ model_id: 'anthropic/claude-3' }),
+        )
+      })
+    })
+  })
+
+  describe('one model for every agent', () => {
+    it('saves the dropdown choice with one PUT /model and shows the new effective models', async () => {
+      setModelSelection.mockResolvedValue(selectionFor('moonshotai/kimi-k3'))
+      const user = userEvent.setup()
+      render(<App />)
+
+      await user.click(await screen.findByRole('tab', { name: /Agents/i }))
+      const select = await screen.findByRole('combobox', { name: /model for all agents/i })
+      await user.selectOptions(select, 'moonshotai/kimi-k3')
+      await user.click(screen.getByRole('button', { name: /apply model/i }))
+
+      await waitFor(() => {
+        expect(setModelSelection).toHaveBeenCalledTimes(1)
+      })
+      expect(setModelSelection).toHaveBeenCalledWith('moonshotai/kimi-k3')
+      await waitFor(() => {
+        expect(screen.getAllByText('moonshotai/kimi-k3:online').length).toBeGreaterThan(0)
+      })
+      expect(screen.getAllByText('web search: on').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('web search: off').length).toBeGreaterThan(0)
+    })
+
+    it('shows the error and keeps the selection when saving fails', async () => {
+      setModelSelection.mockRejectedValue(new Error('422: not an active model'))
+      const user = userEvent.setup()
+      render(<App />)
+
+      await user.click(await screen.findByRole('tab', { name: /Agents/i }))
+      const select = (await screen.findByRole('combobox', {
+        name: /model for all agents/i,
+      })) as HTMLSelectElement
+      await user.selectOptions(select, 'moonshotai/kimi-k3')
+      await user.click(screen.getByRole('button', { name: /apply model/i }))
+
+      expect(await screen.findByText(/not an active model/i)).toBeInTheDocument()
+      await waitFor(() => expect(select.value).toBe('anthropic/claude-opus'))
+    })
+
+    it('has no model input in the agent edit form', async () => {
+      const user = userEvent.setup()
+      render(<App />)
+
+      await user.click(await screen.findByRole('tab', { name: /Agents/i }))
+      const editButtons = await screen.findAllByRole('button', { name: /Edit/i })
+      await user.click(editButtons[0])
+
+      expect(screen.queryByLabelText(/^Model:?$/i)).toBeNull()
+      expect(screen.getByLabelText(/System Prompt/i)).toBeInTheDocument()
+    })
+
+    it('shows a drift notice whose action re-applies the selected model', async () => {
+      getModelSelection.mockResolvedValue(
+        selectionFor('anthropic/claude-opus', ['idea-scout-synthesis']),
+      )
+      setModelSelection.mockResolvedValue(selectionFor('anthropic/claude-opus'))
+      const user = userEvent.setup()
+      render(<App />)
+
+      await user.click(await screen.findByRole('tab', { name: /Agents/i }))
+      await user.click(await screen.findByRole('button', { name: /re-apply selected model/i }))
+
+      await waitFor(() => {
+        expect(setModelSelection).toHaveBeenCalledWith('anthropic/claude-opus')
       })
     })
   })

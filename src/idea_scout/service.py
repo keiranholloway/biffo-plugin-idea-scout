@@ -38,7 +38,7 @@ from .definitions import (
     CANDIDATE_WRITER_AGENT_NAME,
     CANDIDATES_TOOL_NAME,
     DEFAULT_CADENCE_DAYS,
-    DEFAULT_PRD_WRITER_MODEL,
+    DEFAULT_SELECTED_MODEL,
     FINDINGS_TOOL_NAME,
     MAX_CADENCE_DAYS,
     MAX_CANDIDATES,
@@ -61,6 +61,7 @@ from .definitions import (
     RankedShortlist,
     candidate_writer_definition,
     complexity_label,
+    effective_model,
     findings_tool_schema,
     prd_filename,
     prd_tool_schema,
@@ -179,18 +180,6 @@ class UnknownPreferenceError(IdeaScoutError):
     def __init__(self, keys: list[str]) -> None:
         self.keys = keys
         super().__init__(f"Unknown preference key(s): {', '.join(sorted(keys))}")
-
-
-class UnknownModelError(IdeaScoutError):
-    """The requested research model is not available.
-
-    A model may be unknown (not in the catalog), inactive (withdrawn by admin),
-    or not web-capable (missing the :online suffix for research agents).
-    """
-
-    def __init__(self, model_id: str) -> None:
-        self.model_id = model_id
-        super().__init__(f"Research model not available: {model_id}")
 
 
 class InvalidCadenceError(IdeaScoutError):
@@ -347,13 +336,8 @@ class IdeaScoutService:
     def __init__(
         self,
         core: CoreGateway,
-        *,
-        research_model: str,
-        synthesis_model: str,
     ) -> None:
         self._core = core
-        self._research_model = research_model
-        self._synthesis_model = synthesis_model
 
     # ── Inputs ───────────────────────────────────────────────────────────────
 
@@ -363,30 +347,15 @@ class IdeaScoutService:
     async def list_business_models(self) -> list[BusinessModel]:
         return await self._core.list_business_models(active_only=True)
 
-    async def list_model_catalog(self) -> list:  # type: ignore
-        """Admin-configured models for research agents, filtered to active and web-capable."""
+    async def selected_model(self) -> str:
+        """The base model id every agent runs on: the catalog's single active
+        base-id ``is_default`` row, else the built-in default. Never carries a
+        ``:`` suffix — web search is decided per agent by ``effective_model``."""
         entries = await self._core.list_model_catalog(active_only=True)
-        # Only return models that are web-capable, since research agents require web search
-        return [e for e in entries if e.web_capable]
-
-    async def last_used_model_id(self, *, owner_sub: str) -> str | None:
-        """The catalog entry ID of the model this founder most recently used.
-
-        Runs store the resolved model *name* (for display), but ``start_run``
-        validates catalog entry *IDs*, so the name is mapped back to a currently
-        selectable entry here. Works for old rows (which only ever held names).
-        Returns None when the remembered model has been withdrawn, deactivated or
-        is no longer web-capable, so a replay falls back to the default model
-        instead of being rejected.
-        """
-        runs = await self.list_runs(owner_sub=owner_sub)
-        remembered = next((r.research_model for r in runs if r.research_model), None)
-        if remembered is None:
-            return None
-        for entry in await self.list_model_catalog():
-            if entry.model_id == remembered or entry.id == remembered:
-                return entry.id
-        return None
+        chosen = next(
+            (e for e in entries if e.is_default and e.active and ":" not in e.model_id), None
+        )
+        return chosen.model_id if chosen is not None else DEFAULT_SELECTED_MODEL
 
     # ── Starting a run ───────────────────────────────────────────────────────
 
@@ -397,7 +366,6 @@ class IdeaScoutService:
         build_type: str,
         complexity: int,
         preferences: list[str] | None = None,
-        research_model: str | None = None,
         business_model: str | None = None,
     ) -> ScoutRun:
         """Validate the inputs, brief the three research agents, and record the run.
@@ -442,29 +410,10 @@ class IdeaScoutService:
             if chosen_business_model is None:
                 raise UnknownBusinessModelError(business_model)
 
-        # Validate and resolve research_model if provided. Must be present, active,
-        # and web-capable. Resolve once here to the model slug, then pass it down
-        # so we don't re-fetch the catalog for each research agent.
-        chosen_model_slug: str | None = None
-        if research_model is not None:
-            catalog = await self._core.list_model_catalog(active_only=False)
-            model_entry = next((e for e in catalog if e.id == research_model), None)
-            if model_entry is None or not model_entry.active or not model_entry.web_capable:
-                raise UnknownModelError(research_model)
-            chosen_model_slug = model_entry.model_id
-
-        # No model chosen: the catalog's active, web-capable default decides, so
-        # withdrawing or changing it takes effect. The stored agent row is only
-        # the fallback when the catalog has no usable default. The run still
-        # records research_model as None (nothing was *chosen*).
-        research_model_slug = chosen_model_slug
-        if research_model_slug is None:
-            catalog = await self._core.list_model_catalog(active_only=True)
-            default_entry = next(
-                (e for e in catalog if e.is_default and e.active and e.web_capable), None
-            )
-            if default_entry is not None:
-                research_model_slug = default_entry.model_id
+        # One model for every agent: the admin's selection, not the founder's.
+        # The run records the base id; each agent's definition carries its own
+        # effective id (``:online`` only on the research agents).
+        base_model = await self.selected_model()
 
         profile = await self._core.get_user_profile(owner_sub=owner_sub)
         previously_suggested = await self._previously_suggested(owner_sub=owner_sub)
@@ -485,9 +434,7 @@ class IdeaScoutService:
 
         research_run_ids = []
         for agent_name in RESEARCH_AGENT_NAMES:
-            instructions, model = await self._resolve_agent(
-                agent_name, self._research_model, chosen_model_slug=research_model_slug
-            )
+            instructions, model = await self._resolve_agent(agent_name, base_model)
             run_id = await self._core.request_agent_run(
                 agent_name=agent_name,
                 definition=research_definition(model=model, instructions=instructions),
@@ -506,7 +453,7 @@ class IdeaScoutService:
             research_run_ids=research_run_ids,
             chain_id=chain_id,
             business_model=business_model,
-            research_model=chosen_model_slug,
+            research_model=base_model,
         )
 
     # ── Reading a run (and advancing it) ─────────────────────────────────────
@@ -770,7 +717,7 @@ class IdeaScoutService:
             if research is None:
                 research = await self.get_research(owner_sub=run.owner_sub, run_id=run.id)
             instructions, writer_model = await self._resolve_agent(
-                CANDIDATE_WRITER_AGENT_NAME, self._synthesis_model
+                CANDIDATE_WRITER_AGENT_NAME, await self.selected_model()
             )
             await self._core.request_agent_run(
                 agent_name=CANDIDATE_WRITER_AGENT_NAME,
@@ -983,7 +930,7 @@ class IdeaScoutService:
             for m in await self.get_prd_messages(owner_sub=owner_sub, prd_id=prd_id)
         ]
         instructions, model = await self._resolve_agent(
-            PRD_WRITER_AGENT_NAME, DEFAULT_PRD_WRITER_MODEL
+            PRD_WRITER_AGENT_NAME, await self.selected_model()
         )
         compile_run_id = await self._core.request_agent_run(
             agent_name=PRD_WRITER_AGENT_NAME,
@@ -1118,29 +1065,19 @@ class IdeaScoutService:
             and not (m["role"] == "user" and PRD_DOSSIER_MARKER in str(m.get("content") or ""))
         ]
 
-    async def _resolve_agent(
-        self, role: str, fallback_model: str, chosen_model_slug: str | None = None
-    ) -> tuple[str, str]:
-        """The live, admin-editable prompt and model for an agent role.
+    async def _resolve_agent(self, role: str, base_model: str) -> tuple[str, str]:
+        """The live, admin-editable prompt for an agent role, and the model it
+        runs on: the selected base model through ``effective_model``.
 
         Rows are guaranteed to exist at startup via seeding, so a missing row
         raises loudly rather than silently falling back to built-in defaults.
-
-        For research agents only, the founder's chosen_model_slug (already
-        resolved to the actual model id) overrides the stored model. Synthesis
-        always uses the stored model, never the founder's choice.
+        The stored row's model is deliberately not read: it is only the copy that
+        Core's fan-in workflow and chat turns read, kept in step by ``PUT /model``.
         """
         config = await self._core.get_own_config(role=role)
         if config is None:
             raise AgentConfigMissingError(role)
-
-        instructions, model = config["system_prompt"], config["model"]
-
-        # For research agents, founder's choice overrides the resolved model
-        if chosen_model_slug and role in RESEARCH_AGENT_NAMES:
-            model = chosen_model_slug
-
-        return instructions, model
+        return config["system_prompt"], effective_model(base_model, role)
 
     async def _previously_suggested(self, *, owner_sub: str) -> list[str]:
         """Titles this founder has already been shown, newest first (#49).

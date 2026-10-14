@@ -63,7 +63,6 @@ const getFormOptions = vi.fn(() =>
   Promise.resolve({
     build_types: [{ key: 'micro-saas', label: 'MicroSaaS', description: null }],
     business_models: [],
-    models: [],
     preferences: [],
     complexity_levels: [{ value: 3, label: 'moderate' }],
     // The cadence arrives INSIDE the bootstrap, exactly as the real client
@@ -73,7 +72,6 @@ const getFormOptions = vi.fn(() =>
     cadence: served,
   }),
 )
-const getLastUsedModel = vi.fn((): Promise<string | null> => Promise.resolve(null))
 
 vi.mock('./lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/api')>()
@@ -81,7 +79,6 @@ vi.mock('./lib/api', async (importOriginal) => {
     ...actual,
     createApi: () => ({
       getFormOptions: () => getFormOptions(),
-      getLastUsedModel: () => getLastUsedModel(),
       listRuns,
       getRun: vi.fn(),
       startRun,
@@ -116,7 +113,7 @@ const MAX_SETTLE_HOPS = 20
 
 /** Every mock whose resolution the app under test reacts to by calling
  * another one of these, or by committing state this file asserts against. */
-const TRACKED_MOCKS = [getCurrentSession, getFormOptions, getLastUsedModel, listRuns, startRun, getCadence] as const
+const TRACKED_MOCKS = [getCurrentSession, getFormOptions, listRuns, startRun, getCadence] as const
 
 /** The only way an assertion in this file may depend on an async render
  * settling — see the file-level comment for why this replaced `waitFor`.
@@ -196,7 +193,6 @@ describe('auto-starting a stale scout on return (#50)', () => {
     // implementation along with it.
     getCurrentSession.mockClear()
     getFormOptions.mockClear()
-    getLastUsedModel.mockClear()
     serve()
   })
 
@@ -212,7 +208,7 @@ describe('auto-starting a stale scout on return (#50)', () => {
       await settle()
 
       expect(startRun).toHaveBeenCalledTimes(1)
-      expect(startRun).toHaveBeenCalledWith('micro-saas', 3, [], undefined, undefined)
+      expect(startRun).toHaveBeenCalledWith('micro-saas', 3, [], undefined)
       // The founder must be able to tell this happened *to* them, not just
       // that a run appeared — otherwise it is indistinguishable from a bug.
       expect(document.body.textContent).toMatch(/started automatically/i)
@@ -231,19 +227,18 @@ describe('auto-starting a stale scout on return (#50)', () => {
           build_type: 'marketplace',
           complexity: 5,
           preferences: ['recurring-revenue'],
-          research_model: 'Some Model Name',
+          research_model: 'some/model',
           business_model: 'subscription',
         }),
       ])
-      // The runs list holds the model NAME; the replay must send the catalog ID.
-      getLastUsedModel.mockResolvedValueOnce('model-7')
+      // The model is the admin's single choice: the replay sends none.
       startRun.mockResolvedValue(run({ run_id: 'auto1', in_flight: true }))
 
       render(<App />)
       await settle()
 
       expect(startRun).toHaveBeenCalledTimes(1)
-      expect(startRun).toHaveBeenCalledWith('marketplace', 5, ['recurring-revenue'], 'model-7', 'subscription')
+      expect(startRun).toHaveBeenCalledWith('marketplace', 5, ['recurring-revenue'], 'subscription')
     },
     TEST_TIMEOUT_MS,
   )

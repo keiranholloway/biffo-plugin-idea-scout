@@ -56,7 +56,7 @@ def core() -> FakeCoreGateway:
 
 @pytest.fixture
 def service(core: FakeCoreGateway) -> IdeaScoutService:
-    return IdeaScoutService(core, research_model="research/m", synthesis_model="synthesis/m")
+    return IdeaScoutService(core)
 
 
 def _seed_run(
@@ -346,9 +346,7 @@ def _as_founder(core: FakeCoreGateway, sub: str) -> Iterator[TestClient]:
     app.dependency_overrides[require_founder] = lambda: ForwardedUser(
         sub=sub, groups=["founder"], token="tok"
     )
-    app.dependency_overrides[get_service] = lambda: IdeaScoutService(
-        core, research_model="research/m", synthesis_model="synthesis/m"
-    )
+    app.dependency_overrides[get_service] = lambda: IdeaScoutService(core)
     try:
         yield TestClient(app)
     finally:

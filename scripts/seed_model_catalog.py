@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""Seed the research-model catalog founders pick from.
+"""Seed the curated model catalog the admin picks the one model from.
 
-**Nothing works without this.** ``start_run`` validates any ``research_model``
-override against the *live* ``idea_scout_model_catalog`` table (active and
-``web_capable``), and the run form pre-selects the catalog's ``is_default`` row.
-With no row for ``DEFAULT_RESEARCH_MODEL`` a run is rejected with 422
-"Research model not available". Same class of silent prerequisite as
-``seed_build_types.py``.
+The plugin seeds this list itself at startup (insert-if-absent); this script is
+the manual equivalent for an operator with admin credentials. Both read the one
+list, ``definitions.CURATED_MODELS``, so they cannot drift. Ids are base ids —
+web search (``:online``) is decided per agent in code and is never stored here.
 
-This is the starting set, not a fixed enum: the table is admin-managed through
-generic CRUD. Re-running this does not undo an admin's edits; it only creates
-rows whose ``model_id`` is absent.
+Re-running this does not undo an admin's edits; it only creates rows whose
+``model_id`` is absent. It does not choose the default: the plugin's startup
+reconcile (or ``PUT /model``) does.
 
 Usage:
     CORE_API_URL=https://<api-id>.execute-api.<region>.amazonaws.com \
@@ -28,20 +26,14 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-from idea_scout.definitions import DEFAULT_RESEARCH_MODEL
+from idea_scout.definitions import CURATED_MODELS
 
 _MODEL_CATALOG_PATH = "/api/v1/plugins/idea-scout/idea_scout_model_catalog"
 
-#: The starting models. The default research model MUST be present, active,
-#: web-capable and the default.
+#: The curated base models, from the one shared list.
 MODELS: list[dict[str, Any]] = [
-    {
-        "model_id": DEFAULT_RESEARCH_MODEL,
-        "label": "Claude Sonnet 4 (web search)",
-        "active": True,
-        "is_default": True,
-        "web_capable": True,
-    },
+    {"model_id": m["model_id"], "label": m["label"], "active": True, "is_default": False}
+    for m in CURATED_MODELS
 ]
 
 

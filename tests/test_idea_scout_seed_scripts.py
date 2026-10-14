@@ -79,14 +79,13 @@ def test_every_seeded_row_is_active():
 # ── Model catalog ────────────────────────────────────────────────────────────
 
 
-def test_the_default_research_model_is_seeded_usable_and_default():
-    """Without this row `start_run` 422s on the default research model."""
-    from idea_scout.definitions import DEFAULT_RESEARCH_MODEL
+def test_the_curated_catalog_is_base_ids_from_the_shared_list():
+    from idea_scout.definitions import CURATED_MODELS, DEFAULT_SELECTED_MODEL
 
     models = load_script("seed_model_catalog").MODELS
-    rows = [m for m in models if m["model_id"] == DEFAULT_RESEARCH_MODEL]
-    assert len(rows) == 1
-    assert rows[0]["active"] and rows[0]["web_capable"] and rows[0]["is_default"]
+    assert [m["model_id"] for m in models] == [m["model_id"] for m in CURATED_MODELS]
+    assert DEFAULT_SELECTED_MODEL in {m["model_id"] for m in models}
+    assert all(":" not in m["model_id"] and m["active"] for m in models)
     assert len({m["model_id"] for m in models}) == len(models)
 
 

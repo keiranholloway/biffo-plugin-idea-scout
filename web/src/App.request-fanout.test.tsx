@@ -34,11 +34,10 @@ vi.mock("./lib/api", async (importOriginal) => {
       getFormOptions: track("getFormOptions", {
         build_types: [{ key: "micro-saas", label: "MicroSaaS", description: null }],
         business_models: [],
-        models: [],
         preferences: [],
         complexity_levels: [{ value: 3, label: "moderate" }],
         // Bootstrapped inside this response rather than fetched separately —
-        // which is exactly what keeps the mount at three calls (#50/#79).
+        // which is exactly what keeps the mount at two calls (#50/#79).
         cadence: {
           enabled: true,
           cadence_days: 7,
@@ -48,7 +47,6 @@ vi.mock("./lib/api", async (importOriginal) => {
           is_due: false,
         },
       }),
-      getLastUsedModel: track("getLastUsedModel", null),
       listRuns: track("listRuns", []),
       getRun: vi.fn(),
       startRun: vi.fn(),
@@ -67,13 +65,13 @@ describe("request fan-out on mount (#79)", () => {
     calls.length = 0;
   });
 
-  it("issues at most three requests", async () => {
+  it("issues at most two requests", async () => {
     const { default: App } = await import("./App");
     render(<App />);
     await waitFor(() => expect(calls.length).toBeGreaterThan(0));
     await waitFor(() => expect(calls).toContain("listRuns"));
 
-    expect(calls.length).toBeLessThanOrEqual(3);
+    expect(calls.length).toBeLessThanOrEqual(2);
   });
 
   it("fetches the form's reference data in a single call", async () => {

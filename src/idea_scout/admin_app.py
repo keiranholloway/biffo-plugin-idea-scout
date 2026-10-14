@@ -59,8 +59,16 @@ import httpx
 from biffo_plugin_sdk import ForwardedUser, require_group
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
-from idea_scout.adapter import CoreHttpError, CoreHttpGateway
+from idea_scout import model_selection
+from idea_scout.adapter import (
+    _MODEL_CATALOG,
+    _PLUGIN_CONFIG,
+    CoreHttpError,
+    CoreHttpGateway,
+    CoreNotFoundError,
+)
 from idea_scout.definitions import (
     CANDIDATE_WRITER_AGENT_NAME,
     COMMUNITY_AGENT_NAME,
@@ -85,6 +93,9 @@ require_admin = require_group("admin")
 _CORE_API_URL = os.environ.get("BIFFO_CORE_API_URL", "")
 _PLUGIN_NAME = "idea-scout"
 _CHAT_AGENTS_BASE = f"/api/v1/admin/plugins/{_PLUGIN_NAME}/chat-agents"
+# Core's own mount of the manifest-declared catalog CRUD, reached server-side as
+# the calling admin (the same one-hop shape as the chat agents above).
+_CATALOG_BASE = f"/api/v1/plugins/{_PLUGIN_NAME}/idea_scout_model_catalog"
 
 #: How long to wait on Core. Explicit, and matching ideation's equivalent: a bare
 #: ``httpx.AsyncClient()`` silently carries httpx's own 5s default that nobody
@@ -136,18 +147,19 @@ async def _seed_agent_config() -> None:
     see ``app.py``'s counterpart for what the guess cost (biffo-template#924).
     """
     try:
-        research_model = os.environ.get("IDEA_SCOUT_RESEARCH_MODEL", DEFAULT_RESEARCH_MODEL)
-        synthesis_model = os.environ.get("IDEA_SCOUT_SYNTHESIS_MODEL", DEFAULT_SYNTHESIS_MODEL)
         transport = CoreTransport(founder_token="")
         gateway = CoreHttpGateway(transport)
-        payload = seed_config_payloads(
-            research_model=research_model, synthesis_model=synthesis_model
-        )
+        payload = seed_config_payloads()
         result = await gateway.seed_own_config(config=payload)
         created = sum(1 for r in result if r.get("created"))
         already_present = len(result) - created
         _LOGGER.info(f"Seeded {created} new agent config row(s); {already_present} already present")
-    except CoreHttpError as exc:
+        # One model for every agent: seed the curated catalog, make sure a
+        # default exists, and rewrite every agent row to its effective model so
+        # none keeps a hand-entered value.
+        base = await model_selection.reconcile(_startup_backend(transport))
+        _LOGGER.info("Reconciled agent models to %s", base)
+    except (CoreHttpError, model_selection.ModelSelectionError) as exc:
         _LOGGER.exception(
             "Failed to seed agent config at startup. Core's response: %s. "
             "Agent runs will fail loudly when started until the rows exist.",
@@ -186,6 +198,49 @@ def _resolve_static_dir(plugins_root: str | None) -> Path:
     return Path(__file__).resolve().parent.parent.parent / "web-admin" / "dist"
 
 
+def _startup_backend(transport: Any) -> model_selection.RequestBackend:
+    return model_selection.RequestBackend(
+        transport.request,
+        catalog_path=_MODEL_CATALOG,
+        agents_path=_PLUGIN_CONFIG,
+        seed_path=f"{_PLUGIN_CONFIG}/seed",
+        not_found=CoreNotFoundError,
+    )
+
+
+def _admin_backend(admin: ForwardedUser) -> model_selection.ModelBackend:
+    async def request(method: str, path: str, json: dict[str, Any] | None = None) -> Any:
+        return await _core_request(method, path, admin=admin, json=json)
+
+    return model_selection.RequestBackend(
+        request, catalog_path=_CATALOG_BASE, agents_path=_CHAT_AGENTS_BASE
+    )
+
+
+class ModelSelectionBody(BaseModel):
+    model_id: str
+
+
+@app.get("/model")
+async def get_model_selection(admin: ForwardedUser = Depends(require_admin)) -> Any:
+    """The selected model, the selectable options, and each agent's effective
+    model beside the model its stored row actually holds (drift)."""
+    return await model_selection.describe(_admin_backend(admin))
+
+
+@app.put("/model")
+async def set_model_selection(
+    body: ModelSelectionBody, admin: ForwardedUser = Depends(require_admin)
+) -> Any:
+    """Make one active catalog model the model of every agent."""
+    backend = _admin_backend(admin)
+    try:
+        await model_selection.apply_selection(backend, body.model_id)
+    except model_selection.ModelSelectionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return await model_selection.describe(backend)
+
+
 @app.get("/chat-agents")
 async def list_chat_agents(admin: ForwardedUser = Depends(require_admin)) -> Any:
     return await _core_request("GET", _CHAT_AGENTS_BASE, admin=admin)
@@ -195,6 +250,14 @@ async def list_chat_agents(admin: ForwardedUser = Depends(require_admin)) -> Any
 async def create_chat_agent(
     body: dict[str, Any], admin: ForwardedUser = Depends(require_admin)
 ) -> Any:
+    # A stored copy always carries its agent's effective model; a model typed
+    # (or copied from a stale built-in) is replaced, never stored.
+    if "model" in body:
+        effective = await model_selection.effective_for_agent(
+            _admin_backend(admin), str(body.get("agent_key") or body.get("agent_name") or "")
+        )
+        if effective is not None:
+            body = {**body, "model": effective}
     return await _core_request("POST", _CHAT_AGENTS_BASE, admin=admin, json=body)
 
 
@@ -207,6 +270,16 @@ async def get_chat_agent(agent_key: str, admin: ForwardedUser = Depends(require_
 async def update_chat_agent(
     agent_key: str, body: dict[str, Any], admin: ForwardedUser = Depends(require_admin)
 ) -> Any:
+    if "model" in body:
+        effective = await model_selection.effective_for_agent(_admin_backend(admin), agent_key)
+        if effective is not None and body["model"] != effective:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"An agent's model is not set per agent. It is {effective!r}, "
+                    "derived from the single selected model; change it with PUT /model."
+                ),
+            )
     return await _core_request("PUT", f"{_CHAT_AGENTS_BASE}/{agent_key}", admin=admin, json=body)
 
 

@@ -209,7 +209,6 @@ def _model_entry_from_row(row: dict[str, Any]) -> ModelCatalogEntry:
         label=row["label"],
         active=bool(row.get("active")),
         is_default=bool(row.get("is_default")),
-        web_capable=bool(row.get("web_capable")),
     )
 
 

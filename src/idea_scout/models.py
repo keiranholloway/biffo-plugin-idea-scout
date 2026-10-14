@@ -87,14 +87,13 @@ class BusinessModel:
 
 @dataclass(frozen=True)
 class ModelCatalogEntry:
-    """An admin-configured model that founders can choose for research agents."""
+    """A selectable base model. The admin's single ``is_default`` row drives every agent."""
 
     id: str
     model_id: str
     label: str
     active: bool = False
     is_default: bool = False
-    web_capable: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,8 +117,8 @@ class ScoutRun:
     failure_reason: str | None = None
     created_at: str | None = None
     deleted: bool = False
-    #: The catalog entry ID the founder chose for research models, or None if
-    #: the admin's configured default was used instead.
+    #: The base model id (no ``:online``) every agent of this run used; None only
+    #: on runs recorded before one model drove every agent.
     research_model: str | None = None
     #: The business-model key this run was scoped to, or None for "no
     #: preference". None is a real answer here, not missing data — unlike

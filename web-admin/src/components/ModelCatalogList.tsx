@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { statusBadgeClass, statusLabel } from '@biffo/design-tokens/status.mjs'
-import type { ModelCatalogEntry } from '../lib/api'
+import { isBaseModelId, type ModelCatalogEntry } from '../lib/api'
 import { ConfirmDelete } from './ConfirmDelete'
 
 interface ModelCatalogListProps {
@@ -9,12 +9,13 @@ interface ModelCatalogListProps {
   onDelete: (entryId: string) => void
 }
 
-const EDITABLE_FIELDS = ['model_id', 'label', 'active', 'is_default', 'web_capable'] as const
+const EDITABLE_FIELDS = ['model_id', 'label', 'active', 'is_default'] as const
 
 export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogListProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<ModelCatalogEntry>>({})
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [idError, setIdError] = useState<string | null>(null)
 
   function handleEdit(entry: ModelCatalogEntry) {
     setEditingId(entry.id)
@@ -25,12 +26,20 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
       label: entry.label,
       active: entry.active,
       is_default: entry.is_default,
-      web_capable: entry.web_capable,
     })
+    setIdError(null)
   }
 
   function handleSaveEdit() {
     if (!editingId) return
+    const current = entries.find((e) => e.id === editingId)
+    // Only a changed id is checked, so a legacy ':' row can still be deactivated.
+    if (editForm.model_id !== current?.model_id && !isBaseModelId(editForm.model_id ?? '')) {
+      setIdError(
+        "A model id cannot contain ':' — web search (':online') is decided per agent and is never chosen here.",
+      )
+      return
+    }
     const original = entries.find((e) => e.id === editingId)
     // Send only the fields that actually changed.
     const changes: Partial<ModelCatalogEntry> = {}
@@ -78,6 +87,11 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
                   value={editForm.model_id ?? ''}
                   onChange={(e) => setEditForm({ ...editForm, model_id: e.target.value })}
                 />
+                {idError != null && (
+                  <span role="alert" className="admin-error">
+                    {idError}
+                  </span>
+                )}
               </label>
 
               <label>
@@ -107,15 +121,6 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
                 Default
               </label>
 
-              <label className="checkbox">
-                <input
-                  type="checkbox"
-                  checked={editForm.web_capable ?? false}
-                  onChange={(e) => setEditForm({ ...editForm, web_capable: e.target.checked })}
-                />
-                Web Capable
-              </label>
-
               <div className="admin-form-actions">
                 <button onClick={handleSaveEdit} className="biffo-btn-primary">
                   Save
@@ -143,12 +148,6 @@ export function ModelCatalogList({ entries, onUpdate, onDelete }: ModelCatalogLi
                 <strong>Default:</strong>{' '}
                 <span className={entry.is_default ? 'badge-default' : 'badge-not-default'}>
                   {entry.is_default ? 'Yes' : 'No'}
-                </span>
-              </p>
-              <p>
-                <strong>Web Capable:</strong>{' '}
-                <span className={entry.web_capable ? 'badge-web-capable' : 'badge-not-web-capable'}>
-                  {entry.web_capable ? 'Yes' : 'No'}
                 </span>
               </p>
             </div>

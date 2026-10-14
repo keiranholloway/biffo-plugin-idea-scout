@@ -854,12 +854,74 @@ DEFAULT_INSTRUCTIONS: dict[str, str] = {
 #:
 #: ``test_definitions.py`` asserts the canonical form on that basis. It is a
 #: hygiene guard, not a defect guard, and its message says so.
-DEFAULT_RESEARCH_MODEL = "anthropic/claude-sonnet-4:online"
-DEFAULT_SYNTHESIS_MODEL = "anthropic/claude-opus-4.8"
-#: The PRD interviewer converses and reasons; it does not search.
-DEFAULT_PRD_INTERVIEWER_MODEL = "anthropic/claude-opus-4.8"
-#: The PRD writer reasons over what it is handed; it does not search.
-DEFAULT_PRD_WRITER_MODEL = "anthropic/claude-opus-4.8"
+#: Web search is decided per agent, in code, and is never user-configurable.
+#: Research reaches the web through OpenRouter's ``:online`` model suffix; the
+#: ranking, interview and drafting agents work from what they are handed and
+#: would only pay for (and wait on) a search they never use.
+AGENT_WEB_SEARCH: dict[str, bool] = {
+    COMMUNITY_AGENT_NAME: True,
+    NARRATIVE_AGENT_NAME: True,
+    COMPETITIVE_AGENT_NAME: True,
+    SYNTHESIS_AGENT_NAME: False,
+    CANDIDATE_WRITER_AGENT_NAME: False,
+    PRD_INTERVIEWER_AGENT_NAME: False,
+    PRD_WRITER_AGENT_NAME: False,
+}
+
+#: Every agent whose model the admin's single choice drives.
+ALL_AGENT_NAMES: tuple[str, ...] = tuple(AGENT_WEB_SEARCH)
+
+#: The suffix OpenRouter reads as "attach live web results".
+WEB_SEARCH_SUFFIX = ":online"
+
+
+class InvalidBaseModelError(ValueError):
+    """A base model id carried a ``:`` suffix, or was empty."""
+
+
+def validate_base_model(model_id: str) -> str:
+    """Return ``model_id`` if it is a base id (no ``:`` variant suffix)."""
+    if not isinstance(model_id, str) or not model_id.strip() or ":" in model_id:
+        raise InvalidBaseModelError(
+            f"{model_id!r} is not a base model id: variant suffixes such as ':online' "
+            "are decided per agent in code and cannot be chosen."
+        )
+    return model_id
+
+
+def effective_model(base_model: str, agent_name: str) -> str:
+    """The model id an agent runs on: ``<base>:online`` only where that agent
+    uses web search, ``<base>`` otherwise. Rejects a base id containing ``:``."""
+    validate_base_model(base_model)
+    if agent_name not in AGENT_WEB_SEARCH:
+        raise KeyError(agent_name)
+    return f"{base_model}{WEB_SEARCH_SUFFIX}" if AGENT_WEB_SEARCH[agent_name] else base_model
+
+
+#: Used when no active base-id catalog row is the default.
+DEFAULT_SELECTED_MODEL = "anthropic/claude-sonnet-5.5"
+
+#: The curated catalog, seeded insert-if-absent at startup and by
+#: ``scripts/seed_model_catalog.py`` — one list, so they cannot drift. Base ids.
+CURATED_MODELS: list[dict[str, str]] = [
+    {"model_id": "anthropic/claude-opus-5.5", "label": "Claude Opus 5.5 (Anthropic, frontier)"},
+    {"model_id": "anthropic/claude-sonnet-5.5", "label": "Claude Sonnet 5.5 (Anthropic, frontier)"},
+    {"model_id": "openai/gpt-6.1-sol", "label": "GPT-6.1 Sol (OpenAI, frontier)"},
+    {"model_id": "google/gemini-4-argon", "label": "Gemini 4 Argon (Google, frontier)"},
+    {"model_id": "x-ai/grok-4.7", "label": "Grok 4.7 (xAI, frontier)"},
+    {"model_id": "moonshotai/kimi-k3", "label": "Kimi K3 (Moonshot, open-weight)"},
+    {"model_id": "deepseek/deepseek-v4-pro-0813", "label": "DeepSeek V4 Pro (open-weight)"},
+    {"model_id": "z-ai/glm-5.3", "label": "GLM 5.3 (Z.ai, open-weight)"},
+    {"model_id": "qwen/qwen3.8-flash", "label": "Qwen3.8 Flash (Alibaba, open-weight)"},
+    {"model_id": "minimax/minimax-m3", "label": "MiniMax M3 (open-weight)"},
+    {"model_id": "meta-llama/llama-4-maverick", "label": "Llama 4 Maverick (Meta, open-weight)"},
+]
+
+#: What each agent runs on before an admin chooses. Derived, never hand-typed.
+DEFAULT_RESEARCH_MODEL = effective_model(DEFAULT_SELECTED_MODEL, COMMUNITY_AGENT_NAME)
+DEFAULT_SYNTHESIS_MODEL = effective_model(DEFAULT_SELECTED_MODEL, SYNTHESIS_AGENT_NAME)
+DEFAULT_PRD_INTERVIEWER_MODEL = effective_model(DEFAULT_SELECTED_MODEL, PRD_INTERVIEWER_AGENT_NAME)
+DEFAULT_PRD_WRITER_MODEL = effective_model(DEFAULT_SELECTED_MODEL, PRD_WRITER_AGENT_NAME)
 
 
 # ── Definition snapshots (what the runtime executes) ─────────────────────────
@@ -885,7 +947,7 @@ def research_definition(*, model: str, instructions: str) -> dict[str, Any]:
     """One research agent's run definition.
 
     ``tools`` is **empty**: research reaches the web through OpenRouter's
-    ``:online`` model suffix (see ``app.py``'s ``IDEA_SCOUT_RESEARCH_MODEL``),
+    ``:online`` model suffix (see ``AGENT_WEB_SEARCH`` / ``effective_model``),
     which injects live results into the turn, not through a registry tool.
 
     It used to declare ``["web_search"]``. That tool is registered by the
@@ -1004,6 +1066,8 @@ def seed_config_payloads(
     *,
     research_model: str = DEFAULT_RESEARCH_MODEL,
     synthesis_model: str = DEFAULT_SYNTHESIS_MODEL,
+    interviewer_model: str = DEFAULT_PRD_INTERVIEWER_MODEL,
+    writer_model: str = DEFAULT_PRD_WRITER_MODEL,
 ) -> list[dict[str, Any]]:
     """Build the seed payloads for all five agent roles.
 
@@ -1012,8 +1076,8 @@ def seed_config_payloads(
     truth for all seed paths: app.py startup, admin_app.py startup, and the
     manual ``seed_agent_config.py`` script all use this, so they cannot drift.
 
-    ``research_model`` and ``synthesis_model`` default to the built-in constants,
-    but both can be overridden by environment variable in the startup path."""
+    The models default to the effective model of ``DEFAULT_SELECTED_MODEL``.
+    The startup path then re-writes every row from the admin's selection."""
     rows = [
         {
             "agent_key": name,
@@ -1054,7 +1118,7 @@ def seed_config_payloads(
             "agent_name": PRD_INTERVIEWER_AGENT_NAME,
             "role": PRD_INTERVIEWER_AGENT_NAME,
             "system_prompt": DEFAULT_INSTRUCTIONS[PRD_INTERVIEWER_AGENT_NAME],
-            "model": DEFAULT_PRD_INTERVIEWER_MODEL,
+            "model": interviewer_model,
             "required_group": "founder",
             "active": True,
         }
@@ -1065,7 +1129,7 @@ def seed_config_payloads(
             "agent_name": PRD_WRITER_AGENT_NAME,
             "role": PRD_WRITER_AGENT_NAME,
             "system_prompt": DEFAULT_INSTRUCTIONS[PRD_WRITER_AGENT_NAME],
-            "model": DEFAULT_PRD_WRITER_MODEL,
+            "model": writer_model,
             "required_group": "founder",
             "active": True,
         }

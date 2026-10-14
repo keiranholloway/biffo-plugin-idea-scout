@@ -1,9 +1,12 @@
 import { useState } from 'react'
-import type { ModelCatalogEntry } from '../lib/api'
+import { isBaseModelId, type ModelCatalogEntry } from '../lib/api'
 
 interface ModelCatalogFormProps {
   onSubmit: (entry: Omit<ModelCatalogEntry, 'id'>) => void
 }
+
+export const BASE_ID_MESSAGE =
+  "A model id cannot contain ':' — web search (':online') is decided per agent and is never chosen here."
 
 export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
   const [form, setForm] = useState<Omit<ModelCatalogEntry, 'id'>>({
@@ -11,19 +14,23 @@ export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
     label: '',
     active: true,
     is_default: false,
-    web_capable: false,
   })
+  const [idError, setIdError] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!isBaseModelId(form.model_id)) {
+      setIdError(BASE_ID_MESSAGE)
+      return
+    }
+    setIdError(null)
     onSubmit(form)
     setForm({
       model_id: '',
       label: '',
       active: true,
       is_default: false,
-      web_capable: false,
     })
     setShowForm(false)
   }
@@ -43,8 +50,13 @@ export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
               required
               value={form.model_id}
               onChange={(e) => setForm({ ...form, model_id: e.target.value })}
-              placeholder="e.g., anthropic/claude-opus:online"
+              placeholder="e.g., anthropic/claude-opus-5.5"
             />
+            {idError != null && (
+              <span role="alert" className="admin-error">
+                {idError}
+              </span>
+            )}
           </label>
 
           <label>
@@ -54,7 +66,7 @@ export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
               required
               value={form.label}
               onChange={(e) => setForm({ ...form, label: e.target.value })}
-              placeholder="e.g., Claude Opus (Web)"
+              placeholder="e.g., Claude Opus 5.5"
             />
           </label>
 
@@ -74,15 +86,6 @@ export function ModelCatalogForm({ onSubmit }: ModelCatalogFormProps) {
               onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
             />
             Set as Default
-          </label>
-
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={form.web_capable ?? false}
-              onChange={(e) => setForm({ ...form, web_capable: e.target.checked })}
-            />
-            Web Capable (supports :online suffix)
           </label>
 
           <button type="submit" className="biffo-btn-primary">
