@@ -23,7 +23,10 @@ from .definitions import (
     AGENT_WEB_SEARCH,
     ALL_AGENT_NAMES,
     CURATED_MODELS,
+    DEFAULT_INSTRUCTIONS,
     DEFAULT_SELECTED_MODEL,
+    LEGACY_SYNTHESIS_PROMPT_MARKER,
+    SYNTHESIS_AGENT_NAME,
     InvalidBaseModelError,
     effective_model,
     seed_config_payloads,
@@ -55,6 +58,12 @@ class ModelBackend(Protocol):
         ...
 
     async def set_agent_model(self, agent_key: str, model: str) -> None: ...
+
+    async def get_agent_prompts(self) -> dict[str, str]:
+        """``{agent_key: stored system prompt}`` for the agent rows that exist."""
+        ...
+
+    async def set_agent_prompt(self, agent_key: str, prompt: str) -> None: ...
 
 
 def _is_active(row: dict[str, Any]) -> bool:
@@ -125,7 +134,28 @@ async def _write_agents(backend: ModelBackend, base: str) -> dict[str, str]:
     for name in ALL_AGENT_NAMES:
         if stored.get(name) != wanted[name]:
             await backend.set_agent_model(name, wanted[name])
+    await _refresh_stale_synthesis_prompt(backend)
     return wanted
+
+
+async def _refresh_stale_synthesis_prompt(backend: ModelBackend) -> None:
+    """Replace a stored synthesis prompt that still asks for the whole candidate set.
+
+    Seeding is insert-if-absent, so a deployment seeded before the ranking/
+    write-up split keeps the old prompt, and Core's fan-in runs synthesis from
+    that stored row. The old prompt asks for rationales, competitors and sources
+    for every idea (10k+ output tokens) against a ranking-only schema, which is
+    the 240s wall-clock failure. Only a prompt carrying the legacy marker is
+    replaced; an admin's own edit of the new prompt is left alone.
+    """
+    get = getattr(backend, "get_agent_prompts", None)
+    put = getattr(backend, "set_agent_prompt", None)
+    if get is None or put is None:
+        return
+    prompt = (await get()).get(SYNTHESIS_AGENT_NAME)
+    if prompt is not None and LEGACY_SYNTHESIS_PROMPT_MARKER in prompt:
+        _LOGGER.warning("Replacing the stale full-candidate-set synthesis prompt")
+        await put(SYNTHESIS_AGENT_NAME, DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME])
 
 
 async def apply_selection(backend: ModelBackend, model_id: str) -> str:
@@ -284,6 +314,20 @@ class RequestBackend:
                 await self._request("POST", self._agents, json=payload)
         self._rows = {}
 
+    async def get_agent_prompts(self) -> dict[str, str]:
+        if not self._rows:
+            await self.get_agent_models()
+        return {k: str(v["system_prompt"]) for k, v in self._rows.items() if v.get("system_prompt")}
+
+    async def set_agent_prompt(self, agent_key: str, prompt: str) -> None:
+        row = self._rows.get(agent_key)
+        if row is None:
+            row = await self._request("GET", f"{self._agents}/{agent_key}") or {}
+        body = {k: v for k, v in row.items() if k not in _WRITE_DROP}
+        body.update({"agent_key": agent_key, "system_prompt": prompt})
+        await self._request("PUT", f"{self._agents}/{agent_key}", json=body)
+        self._rows[agent_key] = {**row, "system_prompt": prompt}
+
     async def set_agent_model(self, agent_key: str, model: str) -> None:
         row = self._rows.get(agent_key)
         if row is None:
@@ -291,3 +335,4 @@ class RequestBackend:
         body = {k: v for k, v in row.items() if k not in _WRITE_DROP}
         body.update({"agent_key": agent_key, "model": model})
         await self._request("PUT", f"{self._agents}/{agent_key}", json=body)
+        self._rows[agent_key] = {**row, "model": model}

@@ -816,6 +816,10 @@ full PRD. Do not answer in prose.
 #: start via ``seed_config_payloads()``, guaranteeing a row exists for each role.
 #: An admin's edits to the stored row then take effect immediately. Keyed by agent
 #: name, which is also the config role.
+#: A phrase only the pre-split synthesis prompt contained. A stored prompt that
+#: still carries it asks for the whole candidate set in one call.
+LEGACY_SYNTHESIS_PROMPT_MARKER = "with a one-paragraph rationale"
+
 DEFAULT_INSTRUCTIONS: dict[str, str] = {
     COMMUNITY_AGENT_NAME: COMMUNITY_INSTRUCTIONS,
     NARRATIVE_AGENT_NAME: NARRATIVE_INSTRUCTIONS,

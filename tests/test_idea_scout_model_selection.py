@@ -250,3 +250,40 @@ def test_request_backend_skips_agent_rows_the_seed_route_reports_missing():
         request, catalog_path="/c", agents_path="/a", seed_path="/s", not_found=MissingError
     )
     assert asyncio.run(backend.get_agent_models()) == {present: "m"}
+
+
+# ── stale stored synthesis prompt ────────────────────────────────────────────
+
+
+class _PromptBackend(FakeBackend):
+    def __init__(self, *a, prompt: str, **k):
+        super().__init__(*a, **k)
+        self.prompts = {SYNTHESIS_AGENT_NAME: prompt}
+
+    async def get_agent_prompts(self):
+        return dict(self.prompts)
+
+    async def set_agent_prompt(self, agent_key, prompt):
+        self.prompts[agent_key] = prompt
+
+
+def _reconcile_with(prompt: str) -> _PromptBackend:
+    backend = _PromptBackend(
+        [_row("c1", ms.DEFAULT_SELECTED_MODEL, default=True)],
+        {n: effective_model(ms.DEFAULT_SELECTED_MODEL, n) for n in ALL_AGENT_NAMES},
+        prompt=prompt,
+    )
+    asyncio.run(ms.reconcile(backend))
+    return backend
+
+
+def test_reconcile_replaces_a_stored_prompt_asking_for_the_full_set():
+    stale = "Score each idea ... each 1–5 with a one-paragraph rationale ..."
+    backend = _reconcile_with(stale)
+    assert backend.prompts[SYNTHESIS_AGENT_NAME] == DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME]
+
+
+def test_reconcile_leaves_a_current_or_edited_prompt_alone():
+    edited = DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME] + "\nBe brief."
+    backend = _reconcile_with(edited)
+    assert backend.prompts[SYNTHESIS_AGENT_NAME] == edited
