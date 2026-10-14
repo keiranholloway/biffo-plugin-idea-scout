@@ -61,7 +61,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from idea_scout import model_selection
+from idea_scout import fan_in_workflow, model_selection
 from idea_scout.adapter import (
     _MODEL_CATALOG,
     _PLUGIN_CONFIG,
@@ -159,6 +159,8 @@ async def _seed_agent_config() -> None:
         # none keeps a hand-entered value.
         base = await model_selection.reconcile(_startup_backend(transport))
         _LOGGER.info("Reconciled agent models to %s", base)
+        outcome = await fan_in_workflow.reconcile_workflow(transport.request)
+        _LOGGER.info("Fan-in workflow definition: %s", outcome)
     except (CoreHttpError, model_selection.ModelSelectionError) as exc:
         _LOGGER.exception(
             "Failed to seed agent config at startup. Core's response: %s. "

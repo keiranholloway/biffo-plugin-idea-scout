@@ -31,6 +31,7 @@ class FakeBackend:
         self.agents = dict(agents or {})
         self.writes: list[tuple[Any, ...]] = []
         self.seeded: list[str] = []
+        self.prompts: dict[str, str] = {}
 
     async def list_catalog(self):
         return [dict(r) for r in self.catalog]
@@ -57,6 +58,12 @@ class FakeBackend:
     async def set_agent_model(self, agent_key, model):
         self.writes.append(("set", agent_key, model))
         self.agents[agent_key] = model
+
+    async def get_agent_prompts(self) -> dict[str, str]:
+        return dict(self.prompts)
+
+    async def set_agent_prompt(self, agent_key, prompt):
+        self.prompts[agent_key] = prompt
 
 
 def _row(i: str, model_id: str, *, active=True, default=False) -> dict[str, Any]:
@@ -259,12 +266,6 @@ class _PromptBackend(FakeBackend):
     def __init__(self, *a, prompt: str, **k):
         super().__init__(*a, **k)
         self.prompts = {SYNTHESIS_AGENT_NAME: prompt}
-
-    async def get_agent_prompts(self):
-        return dict(self.prompts)
-
-    async def set_agent_prompt(self, agent_key, prompt):
-        self.prompts[agent_key] = prompt
 
 
 def _reconcile_with(prompt: str) -> _PromptBackend:
