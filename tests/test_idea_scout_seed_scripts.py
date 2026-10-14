@@ -8,6 +8,7 @@ from __future__ import annotations
 from _scripts import load_script
 
 from idea_scout.definitions import (
+    CANDIDATE_WRITER_AGENT_NAME,
     DEFAULT_INSTRUCTIONS,
     PRD_INTERVIEWER_AGENT_NAME,
     PRD_WRITER_AGENT_NAME,
@@ -57,6 +58,7 @@ def test_a_row_is_seeded_for_every_agent_role():
     assert keys == {
         *RESEARCH_AGENT_NAMES,
         SYNTHESIS_AGENT_NAME,
+        CANDIDATE_WRITER_AGENT_NAME,
         PRD_INTERVIEWER_AGENT_NAME,
         PRD_WRITER_AGENT_NAME,
     }

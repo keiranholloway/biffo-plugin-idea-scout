@@ -35,6 +35,7 @@ from pydantic import ValidationError
 
 from .adapter import CoreHttpError
 from .definitions import (
+    CANDIDATE_WRITER_AGENT_NAME,
     CANDIDATES_TOOL_NAME,
     DEFAULT_CADENCE_DAYS,
     DEFAULT_PRD_WRITER_MODEL,
@@ -53,9 +54,12 @@ from .definitions import (
     PREFERENCE_KEYS,
     RESEARCH_AGENT_NAMES,
     SYNTHESIS_AGENT_NAME,
+    WRITEUP_TOOL_NAME,
     CandidateSet,
     FindingSet,
     ProductRequirements,
+    RankedShortlist,
+    candidate_writer_definition,
     complexity_label,
     findings_tool_schema,
     prd_filename,
@@ -64,6 +68,10 @@ from .definitions import (
     preference_brief,
     render_prd_markdown,
     research_definition,
+    writeup_tool_schema,
+)
+from .definitions import (
+    Candidate as CandidateDraft,
 )
 from .models import (
     COMPLETE,
@@ -279,6 +287,39 @@ def extract_candidates(run_messages: list[dict[str, Any]]) -> CandidateSet:
         return CandidateSet.model_validate(data)
     except ValidationError as exc:
         raise MalformedCandidatesError(str(exc)) from exc
+
+
+def extract_ranking(run_messages: list[dict[str, Any]]) -> RankedShortlist:
+    """Pull the ranked, scored shortlist out of the ranking run's transcript.
+
+    Raises :class:`MalformedCandidatesError` if it is missing or invalid."""
+    data = _tool_call_arguments(run_messages, CANDIDATES_TOOL_NAME)
+    if data is None:
+        raise MalformedCandidatesError(
+            f"the synthesis run produced no {CANDIDATES_TOOL_NAME} tool call"
+        )
+    try:
+        return RankedShortlist.model_validate(data)
+    except ValidationError as exc:
+        raise MalformedCandidatesError(str(exc)) from exc
+
+
+def _is_legacy_full_set(run_messages: list[dict[str, Any]]) -> bool:
+    """True for a transcript in the pre-split shape: the whole ``CandidateSet``
+    in one call (``candidates`` key). Runs already in flight at deploy still
+    carry it, and a stored admin prompt may still ask for it."""
+    data = _tool_call_arguments(run_messages, CANDIDATES_TOOL_NAME)
+    return isinstance(data, dict) and "candidates" in data
+
+
+def _writer_chain_id(chain_id: str, rank: int) -> str:
+    """The causation chain of one candidate's write-up run.
+
+    Deliberately NOT the scout's own chain: the orchestration engine's fan-in
+    fires on every ``agent.run.completed`` in a chain, and a write-up completing
+    in the research chain could re-fire synthesis. One chain per rank also gives
+    each write-up a stable, discoverable identity without storing run ids."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"idea-scout/{chain_id}/writeup/{rank}"))
 
 
 def _tool_call_arguments(messages: list[dict[str, Any]], tool_name: str) -> Any:
@@ -677,19 +718,125 @@ class IdeaScoutService:
                 run, "The analysis that ranks and scores the ideas failed. Try running again."
             )
 
+        if _is_legacy_full_set(view.messages):  # type: ignore[arg-type]
+            try:
+                candidate_set = extract_candidates(view.messages)  # type: ignore[arg-type]
+            except MalformedCandidatesError:
+                return await self._fail(
+                    run,
+                    "The analysis finished but returned nothing usable. Try running again.",
+                )
+            # Trim rather than reject: an over-long list is the model ignoring
+            # its brief, not a broken run, and the ranking means the extras are
+            # the ones it rated lowest anyway.
+            candidates = [c.model_dump() for c in candidate_set.candidates][:MAX_CANDIDATES]
+            return await self._store_candidates(run, candidates, view.model, failures=[])
+
         try:
-            candidate_set = extract_candidates(view.messages)
+            shortlist = extract_ranking(view.messages)  # type: ignore[arg-type]
         except MalformedCandidatesError:
             return await self._fail(
                 run,
                 "The analysis finished but returned nothing usable. Try running again.",
             )
+        ideas = shortlist.ideas[:MAX_CANDIDATES]
+        if not ideas:
+            return await self._fail(
+                run, "The analysis returned no ideas at all. Try running again."
+            )
+        return await self._collect_writeups(run, ideas, view.model)
 
-        # Trim rather than reject: an over-long list is the model ignoring its
-        # brief, not a broken run, and the ranking means the extras are the ones
-        # it rated lowest anyway.
-        candidates = [c.model_dump() for c in candidate_set.candidates][:MAX_CANDIDATES]
+    async def _collect_writeups(
+        self, run: ScoutRun, ideas: list[Any], model: str | None
+    ) -> ScoutRun:
+        """Fan out one write-up run per shortlisted idea, then gather them.
+
+        Each poll is idempotent: a write-up run that exists is read, one that
+        does not is requested. All requested in one pass, so they run in
+        parallel; the scout waits until every one is terminal. A failed or
+        malformed write-up drops only that idea, and the failure is named.
+        """
+        views = []
+        requested = False
+        research: list[dict[str, Any]] | None = None
+        for rank, idea in enumerate(ideas, start=1):
+            chain = _writer_chain_id(run.chain_id, rank)
+            existing = await self._core.find_chain_run(
+                chain_id=chain, agent_name=CANDIDATE_WRITER_AGENT_NAME
+            )
+            if existing is not None:
+                views.append(existing)
+                continue
+            if research is None:
+                research = await self.get_research(owner_sub=run.owner_sub, run_id=run.id)
+            instructions, writer_model = await self._resolve_agent(
+                CANDIDATE_WRITER_AGENT_NAME, self._synthesis_model
+            )
+            await self._core.request_agent_run(
+                agent_name=CANDIDATE_WRITER_AGENT_NAME,
+                definition=candidate_writer_definition(
+                    model=writer_model, instructions=instructions
+                ),
+                output_tool=writeup_tool_schema(),
+                input_payload={
+                    "candidate": {"rank": rank, **idea.model_dump()},
+                    "founder_profile": run.profile_snapshot,
+                    "build_type": run.build_type,
+                    "complexity": complexity_label(run.complexity),
+                    "findings": [e for e in research if e["findings"]],
+                },
+                causation_id=chain,
+            )
+            requested = True
+        if requested or any(not v.is_terminal for v in views):
+            return run  # write-ups still in flight
+
+        candidates: list[dict[str, Any]] = []
+        failures: list[str] = []
+        for idea, wview in zip(ideas, views, strict=True):
+            if wview.never_started:
+                failures.append(f"{idea.title} (the write-up never started)")
+                continue
+            if not wview.succeeded:
+                failures.append(f"{idea.title} (the write-up failed or timed out)")
+                continue
+            data = _tool_call_arguments(wview.messages, WRITEUP_TOOL_NAME)  # type: ignore[arg-type]
+            try:
+                scorecard = dict(data["scorecard"])
+                for axis in ("viability", "complexity", "economic_moat", "market_fit"):
+                    # The ranking call owns the scores: that is what the order
+                    # was decided on, so a write-up may not drift from them.
+                    scorecard[axis] = {**scorecard[axis], "score": getattr(idea, axis)}
+                written = CandidateDraft.model_validate(
+                    {
+                        "title": idea.title,
+                        "pitch": idea.pitch,
+                        "scorecard": scorecard,
+                        "sources": data.get("sources") or [],
+                    }
+                )
+            except (KeyError, TypeError, AttributeError, ValidationError):
+                failures.append(f"{idea.title} (the write-up returned nothing usable)")
+                continue
+            candidates.append(written.model_dump())
+        return await self._store_candidates(run, candidates, model, failures=failures)
+
+    async def _store_candidates(
+        self,
+        run: ScoutRun,
+        candidates: list[dict[str, Any]],
+        model: str | None,
+        *,
+        failures: list[str],
+    ) -> ScoutRun:
         if not candidates:
+            if failures:
+                return await self._fail(
+                    run,
+                    "None of the shortlisted ideas could be written up: "
+                    + "; ".join(failures)
+                    + ". Try running again.",
+                )
             return await self._fail(
                 run, "The analysis returned no ideas at all. Try running again."
             )
@@ -703,7 +850,12 @@ class IdeaScoutService:
         # deliberately does not do.
         await self._log_novelty(run=run, candidates=candidates)
 
-        await self._core.save_candidates(run_id=run.id, candidates=candidates, model=view.model)
+        await self._core.save_candidates(run_id=run.id, candidates=candidates, model=model)
+        if failures:
+            note = "Some ideas could not be written up and were left out: " + "; ".join(failures)
+            _LOGGER.warning("Scout run %s completed with failures: %s", run.id, note)
+            await self._core.update_run(run_id=run.id, status=COMPLETE, failure_reason=note)
+            return _with(run, status=COMPLETE, failure_reason=note)
         await self._core.update_run(run_id=run.id, status=COMPLETE)
         return _with(run, status=COMPLETE)
 

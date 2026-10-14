@@ -97,7 +97,7 @@ def test_output_tool_schemas_name_their_models():
 
     candidates = d.candidates_tool_schema()
     assert candidates["function"]["name"] == d.CANDIDATES_TOOL_NAME
-    assert candidates["function"]["parameters"] == d.CandidateSet.model_json_schema()
+    assert candidates["function"]["parameters"] == d.RankedShortlist.model_json_schema()
 
 
 def test_output_tools_are_never_listed_as_registry_tools():
@@ -156,6 +156,7 @@ def test_every_agent_role_has_a_default_prompt_and_vice_versa():
     assert set(d.DEFAULT_INSTRUCTIONS) == {
         *d.RESEARCH_AGENT_NAMES,
         d.SYNTHESIS_AGENT_NAME,
+        d.CANDIDATE_WRITER_AGENT_NAME,
         d.PRD_INTERVIEWER_AGENT_NAME,
         d.PRD_WRITER_AGENT_NAME,
     }

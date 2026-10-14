@@ -153,6 +153,11 @@ COMMUNITY_AGENT_NAME = "idea-scout-community"
 NARRATIVE_AGENT_NAME = "idea-scout-narrative"
 COMPETITIVE_AGENT_NAME = "idea-scout-competitive"
 SYNTHESIS_AGENT_NAME = "idea-scout-synthesis"
+#: Writes up ONE shortlisted candidate. Synthesis used to write the whole
+#: candidate set in a single model call, whose duration grew with its output
+#: until it exceeded the 240s wall clock. Synthesis now only ranks and scores;
+#: one of these runs per shortlisted idea, in parallel.
+CANDIDATE_WRITER_AGENT_NAME = "idea-scout-candidate-writer"
 #: The multi-turn chat agent that interviews the founder toward one candidate's
 #: PRD. A registered chat agent (``chat_agents_dynamic``), not an async run.
 PRD_INTERVIEWER_AGENT_NAME = "idea-scout-prd-interviewer"
@@ -181,6 +186,7 @@ PRD_DOSSIER_MARKER = "# CANDIDATE DOSSIER"
 # so the definition and the result extraction cannot disagree.
 FINDINGS_TOOL_NAME = "submit_research_findings"
 CANDIDATES_TOOL_NAME = "submit_idea_candidates"
+WRITEUP_TOOL_NAME = "submit_candidate_writeup"
 PRD_TOOL_NAME = "submit_prd"
 
 
@@ -295,6 +301,92 @@ class CandidateSet(BaseModel):
     candidates: list[Candidate] = Field(
         description=f"Between {MIN_CANDIDATES} and {MAX_CANDIDATES}, best first."
     )
+
+
+# ── Bounded per-call outputs (the synthesis split) ───────────────────────────
+#
+# No single synthesis-side model call may be asked for more than
+# ``MAX_CALL_OUTPUT_TOKENS`` of output: generation time grows with output, and
+# one call writing the whole candidate set outgrew the 240s wall clock. The
+# caps below are in the *tool schemas*, so the model is told them and
+# ``test_definitions.py`` can compute each call's worst case from the schema.
+# They are not enforced on read — an over-long answer is stored, not failed.
+
+#: The budget for one synthesis-side call's output, in tokens.
+MAX_CALL_OUTPUT_TOKENS = 4000
+
+TITLE_MAX_CHARS = 80
+PITCH_MAX_CHARS = 400
+RATIONALE_MAX_CHARS = 500
+BUILD_VS_BUY_MAX_CHARS = 350
+SUMMARY_MAX_CHARS = 450
+MAX_COMPETITORS = 4
+MAX_WRITEUP_SOURCES = 5
+
+
+class RankedIdea(BaseModel):
+    """One shortlisted idea as the ranking call returns it: title, pitch and the
+    four scores — no rationales, competitors or sources. Those are written per
+    candidate by a separate call."""
+
+    title: str = Field(max_length=TITLE_MAX_CHARS, description="Short name for the idea.")
+    pitch: str = Field(
+        max_length=PITCH_MAX_CHARS,
+        description=(
+            "Two or three sentences: who it is for, what it does, and why now. "
+            "Must stand on its own."
+        ),
+    )
+    viability: int = Field(ge=1, le=5)
+    complexity: int = Field(ge=1, le=5, description="5 = simple to build, 1 = very hard.")
+    economic_moat: int = Field(ge=1, le=5)
+    market_fit: int = Field(ge=1, le=5)
+
+
+class RankedShortlist(BaseModel):
+    """The ranking call's whole output — scored and ordered, but not written up."""
+
+    ideas: list[RankedIdea] = Field(
+        max_length=MAX_CANDIDATES,
+        description=f"Between {MIN_CANDIDATES} and {MAX_CANDIDATES}, best first.",
+    )
+
+
+class _AxisDraft(BaseModel):
+    score: int = Field(ge=1, le=5)
+    rationale: str = Field(
+        max_length=RATIONALE_MAX_CHARS,
+        description="One short paragraph, grounded in the research.",
+    )
+
+
+class _CompetitorDraft(BaseModel):
+    name: str = Field(max_length=60)
+    url: str | None = Field(default=None, max_length=200)
+    note: str = Field(max_length=250)
+
+
+class _SourceDraft(BaseModel):
+    url: str = Field(max_length=250)
+    note: str = Field(max_length=200)
+
+
+class _ScorecardDraft(BaseModel):
+    viability: _AxisDraft
+    complexity: _AxisDraft
+    economic_moat: _AxisDraft
+    market_fit: _AxisDraft
+    build_vs_buy: str = Field(max_length=BUILD_VS_BUY_MAX_CHARS)
+    competitors: list[_CompetitorDraft] = Field(default_factory=list, max_length=MAX_COMPETITORS)
+    summary: str = Field(max_length=SUMMARY_MAX_CHARS)
+
+
+class CandidateWriteup(BaseModel):
+    """One candidate's write-up call output. Title, pitch and scores come from
+    the ranking call; this adds the prose, competitors and evidence."""
+
+    scorecard: _ScorecardDraft
+    sources: list[_SourceDraft] = Field(default_factory=list, max_length=MAX_WRITEUP_SOURCES)
 
 
 # ── Product requirements document (PRD) ──────────────────────────────────────
@@ -621,19 +713,49 @@ Work in this order:
    and why you kept it anyway. Never silently drop an idea for violating one,
    and never invent a preference the founder did not express.
 6. Score each idea: viability, build complexity (5 = simple, 1 = very hard),
-   economic moat and market fit, each 1–5 with a one-paragraph rationale
-   grounded in the research above rather than in general knowledge. Add a
-   build-vs-buy recommendation, the competitors you know of, and a candid
-   two-or-three-sentence summary.
-7. Carry the evidence through: each candidate's sources must come from the
-   findings you were given.
+   economic moat and market fit, each an integer 1–5, grounded in the research
+   above rather than in general knowledge. Scores only: a separate analyst
+   writes each idea's rationales, competitors and sources afterwards, so do not
+   write them here.
+
+Keep the answer small and fast: per idea, a title of at most {TITLE_MAX_CHARS}
+characters, a pitch of at most {PITCH_MAX_CHARS} characters (two or three
+sentences), and the four scores. Nothing else.
 
 Do not invent findings the researchers did not report. If the research is thin,
 return fewer than {MAX_CANDIDATES} good ideas rather than padding to the limit.
 
 {_UNTRUSTED_INPUT_RULE}
 Return your answer by calling the `{CANDIDATES_TOOL_NAME}` tool exactly once
-with the full ranked list. Do not answer in prose.
+with the full ranked list, best first. Do not answer in prose.
+"""
+
+CANDIDATE_WRITER_INSTRUCTIONS = f"""\
+You are Idea Scout's candidate analyst. A ranking analyst has already chosen,
+scored and ordered a shortlist of startup ideas for a founder. You are given ONE
+of them (`candidate`: its title, pitch and four scores), the founder's profile,
+build type and complexity preference, and the researchers' `findings`.
+
+Write up that one idea, and only that one:
+1. For each of viability, complexity (5 = simple, 1 = very hard), economic moat
+   and market fit, return the score you were given unchanged and a short
+   paragraph of rationale (at most {RATIONALE_MAX_CHARS} characters) grounded in
+   the findings rather than in general knowledge.
+2. Give a build-vs-buy recommendation — build, buy/partner or hybrid — and why,
+   given what already exists (at most {BUILD_VS_BUY_MAX_CHARS} characters).
+3. List up to {MAX_COMPETITORS} competitors you know of, with how they overlap
+   and where they are weak.
+4. Write a candid two-or-three-sentence summary of overall viability, naming the
+   biggest risk plainly (at most {SUMMARY_MAX_CHARS} characters). Be a candid
+   co-founder, not a cheerleader.
+5. Carry the evidence through: up to {MAX_WRITEUP_SOURCES} sources, each taken
+   from the findings you were given.
+
+Do not invent findings the researchers did not report.
+
+{_UNTRUSTED_INPUT_RULE}
+Return your answer by calling the `{WRITEUP_TOOL_NAME}` tool exactly once. Do not
+answer in prose.
 """
 
 PRD_INTERVIEWER_INSTRUCTIONS = f"""\
@@ -699,6 +821,7 @@ DEFAULT_INSTRUCTIONS: dict[str, str] = {
     NARRATIVE_AGENT_NAME: NARRATIVE_INSTRUCTIONS,
     COMPETITIVE_AGENT_NAME: COMPETITIVE_INSTRUCTIONS,
     SYNTHESIS_AGENT_NAME: SYNTHESIS_INSTRUCTIONS,
+    CANDIDATE_WRITER_AGENT_NAME: CANDIDATE_WRITER_INSTRUCTIONS,
     PRD_INTERVIEWER_AGENT_NAME: PRD_INTERVIEWER_INSTRUCTIONS,
     PRD_WRITER_AGENT_NAME: PRD_WRITER_INSTRUCTIONS,
 }
@@ -751,6 +874,9 @@ RESEARCH_MAX_TURNS = 8
 # needs one turn to answer, plus headroom for a retried tool call.
 SYNTHESIS_MAX_TURNS = 3
 
+# One turn to write up one candidate, plus headroom for a retried tool call.
+CANDIDATE_WRITER_MAX_TURNS = 3
+
 # One turn to write the PRD, plus headroom for a retried tool call.
 PRD_WRITER_MAX_TURNS = 3
 
@@ -798,6 +924,17 @@ def synthesis_definition(*, model: str, instructions: str) -> dict[str, Any]:
     }
 
 
+def candidate_writer_definition(*, model: str, instructions: str) -> dict[str, Any]:
+    """One candidate write-up run's definition — no tools; it works from its
+    ``input_payload``."""
+    return {
+        "instructions": instructions,
+        "model": model,
+        "tools": [],
+        "max_turns": CANDIDATE_WRITER_MAX_TURNS,
+    }
+
+
 def prd_writer_definition(*, model: str, instructions: str) -> dict[str, Any]:
     """The PRD writer's run definition — no tools; it works from its
     ``input_payload``."""
@@ -840,7 +977,19 @@ def candidates_tool_schema() -> dict[str, Any]:
         "function": {
             "name": CANDIDATES_TOOL_NAME,
             "description": "Submit the ranked, scored shortlist of candidate startup ideas.",
-            "parameters": CandidateSet.model_json_schema(),
+            "parameters": RankedShortlist.model_json_schema(),
+        },
+    }
+
+
+def writeup_tool_schema() -> dict[str, Any]:
+    """The output tool a candidate-writer run calls to return one write-up."""
+    return {
+        "type": "function",
+        "function": {
+            "name": WRITEUP_TOOL_NAME,
+            "description": "Submit the write-up for this one candidate idea.",
+            "parameters": CandidateWriteup.model_json_schema(),
         },
     }
 
@@ -883,6 +1032,17 @@ def seed_config_payloads(
             "agent_name": SYNTHESIS_AGENT_NAME,
             "role": SYNTHESIS_AGENT_NAME,
             "system_prompt": DEFAULT_INSTRUCTIONS[SYNTHESIS_AGENT_NAME],
+            "model": synthesis_model,
+            "required_group": "founder",
+            "active": True,
+        }
+    )
+    rows.append(
+        {
+            "agent_key": CANDIDATE_WRITER_AGENT_NAME,
+            "agent_name": CANDIDATE_WRITER_AGENT_NAME,
+            "role": CANDIDATE_WRITER_AGENT_NAME,
+            "system_prompt": DEFAULT_INSTRUCTIONS[CANDIDATE_WRITER_AGENT_NAME],
             "model": synthesis_model,
             "required_group": "founder",
             "active": True,
