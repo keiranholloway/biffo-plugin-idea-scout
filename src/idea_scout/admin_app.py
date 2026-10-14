@@ -62,6 +62,7 @@ from fastapi.staticfiles import StaticFiles
 
 from idea_scout.adapter import CoreHttpError, CoreHttpGateway
 from idea_scout.definitions import (
+    CANDIDATE_WRITER_AGENT_NAME,
     COMMUNITY_AGENT_NAME,
     COMPETITIVE_AGENT_NAME,
     DEFAULT_INSTRUCTIONS,
@@ -292,6 +293,18 @@ def builtin_agents() -> dict:
                 "max_history_messages": 10,
                 "max_output_tokens": 2000,
                 "timeout_seconds": 30,
+            },
+            {
+                "agent_key": CANDIDATE_WRITER_AGENT_NAME,
+                "agent_name": CANDIDATE_WRITER_AGENT_NAME,
+                "role": CANDIDATE_WRITER_AGENT_NAME,
+                "system_prompt": DEFAULT_INSTRUCTIONS[CANDIDATE_WRITER_AGENT_NAME],
+                "model": DEFAULT_SYNTHESIS_MODEL,
+                "required_group": "founder",
+                "active": True,
+                "max_history_messages": 10,
+                "max_output_tokens": 4000,
+                "timeout_seconds": 120,
             },
             {
                 "agent_key": PRD_INTERVIEWER_AGENT_NAME,
