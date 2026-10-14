@@ -281,3 +281,22 @@ async def test_a_ranking_call_with_an_invalid_shortlist_fails_the_run():
 
     assert state.status == m.FAILED
     assert "nothing usable" in (state.failure_reason or "")
+
+
+async def test_a_legacy_full_set_call_with_invalid_candidates_fails_the_run():
+    core = FakeCoreGateway()
+    svc = _service(core)
+    run = await svc.start_run(owner_sub=OWNER, build_type="micro-saas", complexity=3)
+    for rid, angle in zip(
+        run.research_run_ids, ("community", "narrative", "competitive"), strict=True
+    ):
+        core.agent_runs[rid].complete(_big_findings(angle))
+    core.engine_fires_synthesis(run.id).complete(
+        _call(CANDIDATES_TOOL_NAME, {"candidates": "not a list"})
+    )
+    await svc.get_run(owner_sub=OWNER, run_id=run.id)
+
+    state = await svc.get_run(owner_sub=OWNER, run_id=run.id)
+
+    assert state.status == m.FAILED
+    assert "nothing usable" in (state.failure_reason or "")
