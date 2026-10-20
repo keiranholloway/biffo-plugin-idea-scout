@@ -20,22 +20,15 @@ SYNTHESIS_TIMEOUT_SECONDS = 240
 
 WORKFLOW_NAME = "Idea Scout — synthesise once research completes"
 
-#: Internal (SigV4) route for this plugin's own workflow definitions. Core must
-#: expose it; see the out-of-scope blocker raised with this change.
-WORKFLOWS_PATH = "/api/v1/internal/plugins/me/workflows"
+#: Internal (SigV4) route that upserts this plugin's own workflow definitions.
+WORKFLOWS_PATH = "/api/v1/internal/plugins/me/workflows/seed"
 
-_COMPARED = (
-    "name",
-    "trigger_source",
-    "trigger_detail_type",
-    "action_type",
-    "action_config",
-    "enabled",
-)
+DEFINITION_KEY = "idea-scout-fan-in"
 
 
 def definition() -> dict[str, Any]:
     return {
+        "definition_key": DEFINITION_KEY,
         "name": WORKFLOW_NAME,
         "trigger_source": "biffo.core",
         "trigger_detail_type": "agent.run.completed",
@@ -52,17 +45,21 @@ def definition() -> dict[str, Any]:
 
 
 async def reconcile_workflow(request: Any) -> str:
-    """Create or replace the fan-in definition; no write when it is current.
+    """Seed the fan-in definition through Core's idempotent seed route.
 
-    Returns ``"created"``, ``"updated"`` or ``"unchanged"``.
+    Core upserts by ``definition_key`` (adopting a same-name unowned row), so
+    repeating this on every startup converges on the current definition.
+    Returns ``"created"``, ``"updated"`` or ``"unchanged"`` from Core's per-row
+    result, or ``"seeded"`` when Core reports no detail.
     """
-    want = definition()
-    rows = await request("GET", WORKFLOWS_PATH) or []
-    have = next((r for r in rows if r.get("name") == WORKFLOW_NAME), None)
-    if have is None:
-        await request("POST", WORKFLOWS_PATH, json=want)
+    result = await request("POST", WORKFLOWS_PATH, json=[definition()])
+    row = result[0] if isinstance(result, list) and result else None
+    if not isinstance(row, dict):
+        return "seeded"
+    if row.get("created"):
         return "created"
-    if all(have.get(k) == want[k] for k in _COMPARED):
+    if row.get("updated"):
+        return "updated"
+    if "created" in row or "updated" in row:
         return "unchanged"
-    await request("PUT", f"{WORKFLOWS_PATH}/{have['id']}", json=want)
-    return "updated"
+    return "seeded"
