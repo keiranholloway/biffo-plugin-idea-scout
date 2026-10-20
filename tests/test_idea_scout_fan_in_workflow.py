@@ -112,3 +112,15 @@ def test_missing_definition_is_created_once():
     assert asyncio.run(fw.reconcile_workflow(core.request)) == "created"
     assert asyncio.run(fw.reconcile_workflow(core.request)) == "unchanged"
     assert core.writes == 1
+
+
+def test_core_reporting_no_per_row_detail_is_seeded():
+    async def request(method: str, path: str, json: Any = None) -> Any:
+        return []
+
+    assert asyncio.run(fw.reconcile_workflow(request)) == "seeded"
+
+    async def non_dict(method: str, path: str, json: Any = None) -> Any:
+        return ["ok"]
+
+    assert asyncio.run(fw.reconcile_workflow(non_dict)) == "seeded"
